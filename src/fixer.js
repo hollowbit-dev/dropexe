@@ -37,6 +37,8 @@ async function applyFix(bottle, fix, onLog) {
   const reg = [
     'REGEDIT4', '',
     '[HKEY_CURRENT_USER\\Software\\Wine]', `"Version"="${winver}"`, '',
+    // No crash dialog: a crashed game must close, or "Make it run" thinks it stayed open.
+    '[HKEY_CURRENT_USER\\Software\\Wine\\WineDbg]', '"ShowCrashDialog"=dword:00000000', '',
     // Retina: draw at the screen's full sharpness, and tell Windows the screen is high-DPI so text isn't tiny.
     '[HKEY_CURRENT_USER\\Software\\Wine\\Mac Driver]', `"RetinaMode"="${fix.retina ? 'y' : 'n'}"`, '',
     '[HKEY_CURRENT_USER\\Control Panel\\Desktop]', `"LogPixels"=dword:${fix.retina ? '000000c0' : '00000060'}`, '',
