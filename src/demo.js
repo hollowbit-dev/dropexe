@@ -19,7 +19,9 @@ function view(root) {
     id: `steam-${id}`, kind: 'game', source: 'steam', name, bottle: 'steam', steamAppId: String(id),
     art: art(id), playMs, lastPlayed: now - i * 86400e3, fix: { graphics: g }, fixedWith: i === 3 ? 'dxvk' : null, macApp: i < 2, running: false,
   }));
-  items.push({ id: 'app-demo', kind: 'game', source: 'drop', name: 'Old Racing Game', bottle: 'apps', art: {}, playMs: 2 * H, lastPlayed: now - 20 * 86400e3, fix: { graphics: 'wined3d' } });
+  const fx = path.join(__dirname, '..', 'test', 'fixtures');
+  items.push({ id: 'app-cave', kind: 'game', source: 'drop', name: 'Cave Story', bottle: 'apps', art: { icon: path.join(fx, 'cave.png') }, playMs: 2 * H, lastPlayed: now - 20 * 86400e3, fix: { graphics: 'wined3d' } });
+  items.push({ id: 'app-npp', kind: 'app', source: 'drop', name: 'Notepad++', bottle: 'apps', art: { icon: path.join(fx, 'npp.png') }, playMs: 0, lastPlayed: now - 30 * 86400e3, fix: { graphics: 'dxmt' } });
   items.push({ id: 'store-steam', kind: 'store', storeId: 'steam', name: 'Steam', color: '#1b9cf2', art: {}, fix: { graphics: 'dxmt' } });
   items.push({ id: 'store-epic', kind: 'store', storeId: 'epic', name: 'Epic Games', color: '#e6e6e6', art: {}, fix: { graphics: 'dxmt' } });
   return items;

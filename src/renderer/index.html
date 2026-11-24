@@ -16,7 +16,7 @@
   </nav>
   <div class="top-right">
     <div class="job" id="job" hidden><span class="job-bar"><i></i></span><span class="job-text"></span></div>
-    <button class="btn ghost" id="add-btn">Add a Windows program</button>
+    <button class="btn ghost sm" id="add-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Add a Windows program</button>
   </div>
 </header>
 
@@ -35,15 +35,15 @@
 <main class="view" id="library">
   <section class="hero" id="hero">
     <div class="hero-copy">
-      <p class="hero-kind" id="hero-kind"></p>
+      <p class="hero-kind" id="hero-kind"><img id="hero-kind-icon" alt="" hidden><span id="hero-kind-text"></span></p>
       <h1 class="hero-title" id="hero-title"></h1>
       <div class="hero-actions">
-        <button class="btn primary big" id="play-btn">Play</button>
-        <button class="btn glass" id="fix-btn">Make it run</button>
-        <button class="btn glass" id="mac-btn">Add to Launchpad</button>
-        <button class="btn icon glass" id="more-btn" aria-label="More options" aria-haspopup="menu">•••</button>
+        <button class="btn primary play" id="play-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.6v10.8a.8.8 0 0 0 1.2.7l8.6-5.4a.8.8 0 0 0 0-1.4L5.2 1.9A.8.8 0 0 0 4 2.6Z" fill="currentColor"/></svg><span>Play</span></button>
+        <button class="btn glass" id="fix-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m2 14 8-8m1.5-3.5.5-1.5.5 1.5L14 3l-1.5.5L12 5l-.5-1.5L10 3l1.5-.5ZM5 3l.3-1 .3 1 1 .3-1 .3-.3 1-.3-1-1-.3 1-.3Zm8 6 .3-1 .3 1 1 .3-1 .3-.3 1-.3-1-1-.3 1-.3Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Make it run</button>
+        <button class="btn glass" id="mac-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1.5" fill="currentColor"/><rect x="9" y="2" width="5" height="5" rx="1.5" fill="currentColor"/><rect x="2" y="9" width="5" height="5" rx="1.5" fill="currentColor"/><path d="M11.5 9v5M9 11.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Add to Launchpad</span></button>
+        <button class="btn icon glass" id="more-btn" aria-label="More options" aria-haspopup="menu"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="8" r="1.5" fill="currentColor"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/><circle cx="13" cy="8" r="1.5" fill="currentColor"/></svg></button>
       </div>
-      <p class="hero-meta" id="hero-meta"></p>
+      <ul class="hero-meta" id="hero-meta" aria-label="Details"></ul>
     </div>
   </section>
   <section class="shelf-wrap">
@@ -74,11 +74,14 @@
 <!-- more menu -->
 <div class="menu" id="menu" role="menu" hidden>
   <button role="menuitem" data-act="rename">Rename</button>
+  <hr>
   <button role="menuitem" data-act="graphics-dxmt">Graphics: Metal</button>
   <button role="menuitem" data-act="graphics-dxvk">Graphics: Vulkan</button>
   <button role="menuitem" data-act="graphics-wined3d">Graphics: Classic</button>
+  <hr>
   <button role="menuitem" data-act="drive">Show its Windows drive</button>
   <button role="menuitem" data-act="log">Show what happened last time</button>
+  <hr>
   <button role="menuitem" data-act="remove" class="danger">Remove from DropExe</button>
 </div>
 

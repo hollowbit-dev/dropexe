@@ -3,7 +3,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const S = { items: [], stores: [], steps: [], sel: null, tab: 'library', jobs: new Map(), fixing: null, engine: null, playing: new Set() };
 
-const fileUrl = (p) => (!p ? '' : /^https?:/.test(p) ? p : 'file://' + p.split('/').map(encodeURIComponent).join('/'));
+const fileUrl = (p) => (!p ? '' : /^(https?:|stores\/)/.test(p) ? p : 'file://' + p.split('/').map(encodeURIComponent).join('/'));
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
 function hslRgb(h, s, l) {
   s /= 100; l /= 100;
@@ -12,6 +12,10 @@ function hslRgb(h, s, l) {
   return `${f(0)} ${f(8)} ${f(4)}`;
 }
 const hexRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `${n >> 16 & 255} ${n >> 8 & 255} ${n & 255}`; };
+// Store logos ship with the app (taken from each store's own installer); anything else uses its exe's icon.
+const STORE_LOGOS = new Set(['steam', 'gog', 'battlenet', 'ea']);
+const storeLogo = (id) => (STORE_LOGOS.has(id) ? `stores/${id}.png` : null);
+const iconOf = (it) => it.art?.icon || (it.kind === 'store' ? storeLogo(it.storeId) : null);
 const colorOf = (it) => (it.color ? hexRgb(it.color) : hslRgb(hue(it.name), 55, 52));
 
 function toast(text, kind = '') {
@@ -49,12 +53,15 @@ function tintFrom(img, key) {
 
 // ---------------------------------------------------------------- backdrop
 let bdFront = 'a';
-function setBackdrop(url) {
+function setBackdrop(url, mode = '') {
+  const key = url + '|' + mode;
   const front = $(`.bd-${bdFront}`);
-  if (front.dataset.url === url) return;
+  if (front.dataset.key === key) return;
   const back = $(`.bd-${bdFront === 'a' ? 'b' : 'a'}`);
-  back.dataset.url = url || '';
+  back.dataset.key = key;
+  back.className = `bd bd-${bdFront === 'a' ? 'b' : 'a'} ${mode}`;
   back.style.backgroundImage = url ? `url("${url}")` : 'none';
+  void back.offsetWidth;
   back.classList.add('on'); front.classList.remove('on');
   bdFront = bdFront === 'a' ? 'b' : 'a';
 }
@@ -73,15 +80,21 @@ function coverEl(it) {
   b.style.setProperty('--c', colorOf(it));
   if (it.art?.cover) {
     const img = new Image();
-    img.src = fileUrl(it.art.cover); img.alt = ''; img.draggable = false;
-    if (it.art.coverIsWide) img.className = 'wide';
+    img.src = fileUrl(it.art.cover); img.alt = ''; img.draggable = false; img.className = 'art';
     img.onload = () => { const t = tintFrom(img, it.id); if (t) { it._tint = t; if (S.sel === it.id) applyTint(it); } };
     b.append(img);
   } else {
-    const p = document.createElement('span');
-    p.className = 'plain' + (it.kind === 'store' ? ' store' : '');
-    p.textContent = it.name;
-    b.append(p);
+    b.classList.add('iconic');
+    const icon = iconOf(it);
+    if (icon) {
+      const img = new Image();
+      img.src = fileUrl(icon); img.alt = ''; img.draggable = false; img.className = 'ico';
+      img.onload = () => { if (img.naturalWidth < 64) img.classList.add('pixel'); const t = tintFrom(img, it.id); if (t) { it._tint = t; b.style.setProperty('--c', t); if (S.sel === it.id) applyTint(it); } };
+      b.append(img);
+    } else {
+      const m = document.createElement('span'); m.className = 'mono'; m.textContent = it.name.trim()[0]?.toUpperCase() || '?'; b.append(m);
+    }
+    const n = document.createElement('span'); n.className = 'name'; n.textContent = it.name; b.append(n);
   }
   if (it.running || S.playing.has(it.id)) { const t = document.createElement('span'); t.className = 'tag live'; t.textContent = it.kind === 'store' ? 'Open' : 'Playing'; b.append(t); }
   else if (it.installing) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Installing in Steam'; b.append(t); }
@@ -110,30 +123,48 @@ function applyTint(it) {
 const fmtTime = (ms) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${(m / 60).toFixed(m < 600 ? 1 : 0)} h`; };
 const GRAPHICS = { dxmt: 'Metal graphics', dxvk: 'Vulkan graphics', wined3d: 'Classic graphics' };
 
+// Scroll only the shelf (scrollIntoView would also slide the whole page sideways).
+function scrollShelfTo(c) {
+  if (!c) return;
+  const shelf = $('#shelf');
+  const pad = parseFloat(getComputedStyle(shelf).paddingLeft);
+  const left = c.offsetLeft;
+  if (left - pad < shelf.scrollLeft) shelf.scrollTo({ left: left - pad, behavior: 'smooth' });
+  else if (left + c.offsetWidth + pad > shelf.scrollLeft + shelf.clientWidth) shelf.scrollTo({ left: left + c.offsetWidth + pad - shelf.clientWidth, behavior: 'smooth' });
+}
+
 function select(id, scroll) {
   const it = S.items.find((i) => i.id === id);
   if (!it) return;
   const changed = S.sel !== id;
   S.sel = id;
   $$('.cover').forEach((c) => { const on = c.dataset.id === id; c.classList.toggle('sel', on); c.setAttribute('aria-selected', on); });
-  if (scroll) $(`.cover[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  if (scroll) scrollShelfTo($(`.cover[data-id="${CSS.escape(id)}"]`));
   const title = $('#hero-title');
   if (changed || title.textContent !== it.name) {
     title.textContent = it.name;
     title.classList.remove('swap'); void title.offsetWidth; title.classList.add('swap');
   }
-  $('#hero-kind').textContent = it.kind === 'store' ? 'Game store' : it.source === 'steam' ? 'From Steam' : it.source === 'epic' ? 'From Epic Games' : 'Windows program';
+  const kind = it.kind === 'store' ? 'Game store' : it.source === 'steam' ? 'Steam' : it.source === 'epic' ? 'Epic Games' : 'Windows program';
+  const kIcon = it.kind === 'store' ? iconOf(it) : it.source === 'steam' ? storeLogo('steam') : null;
+  $('#hero-kind-text').textContent = kind;
+  $('#hero-kind-icon').hidden = !kIcon;
+  if (kIcon) $('#hero-kind-icon').src = fileUrl(kIcon);
+  $('#hero-kind').classList.toggle('has-icon', !!kIcon);
   const meta = [];
   if (it.playMs > 60000) meta.push(`Played ${fmtTime(it.playMs)}`);
   if (it.fix?.graphics) meta.push(GRAPHICS[it.fix.graphics]);
   if (it.fixedWith) meta.push('Fixed by Make it run');
   if (it.macApp) meta.push('In Launchpad');
-  $('#hero-meta').textContent = meta.join(', ');
-  setBackdrop(fileUrl(it.art?.hero || it.art?.cover || ''));
+  $('#hero-meta').replaceChildren(...meta.map((m) => { const li = document.createElement('li'); li.textContent = m; return li; }));
+  const icon = iconOf(it);
+  if (it.art?.hero || it.art?.cover) setBackdrop(fileUrl(it.art.hero || it.art.cover));
+  else setBackdrop(icon ? fileUrl(icon) : '', 'icon');
+  if (changed) { const c = $(`.cover[data-id="${CSS.escape(id)}"]`); c?.classList.remove('shine'); void c?.offsetWidth; c?.classList.add('shine'); }
   applyTint(it);
   updatePlay();
   const mac = $('#mac-btn');
-  mac.textContent = it.macApp ? 'Show in Finder' : 'Add to Launchpad';
+  $('span', mac).textContent = it.macApp ? 'Show in Finder' : 'Add to Launchpad';
   $('#fix-btn').hidden = it.kind === 'store' && it.storeId === 'steam' && false;
 }
 
@@ -142,7 +173,8 @@ function updatePlay() {
   if (!it) return;
   const live = it.running || S.playing.has(it.id);
   const b = $('#play-btn');
-  b.textContent = live ? 'Stop' : it.kind === 'store' ? `Open ${it.name}` : 'Play';
+  $('span', b).textContent = live ? 'Stop' : it.kind === 'store' ? `Open ${it.name}` : 'Play';
+  $('svg', b).innerHTML = live ? '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/>' : '<path d="M4 2.6v10.8a.8.8 0 0 0 1.2.7l8.6-5.4a.8.8 0 0 0 0-1.4L5.2 1.9A.8.8 0 0 0 4 2.6Z" fill="currentColor"/>';
   b.classList.toggle('playing', live);
   b.disabled = !!it.installing;
 }
@@ -152,7 +184,7 @@ async function playSel() {
   if (!it) return;
   if (it.running || S.playing.has(it.id)) { await dx.stop(it.id); S.playing.delete(it.id); updatePlay(); return; }
   const b = $('#play-btn');
-  b.textContent = 'Starting…'; b.disabled = true;
+  $('span', b).textContent = 'Starting…'; b.disabled = true;
   const r = await dx.play(it.id);
   b.disabled = false;
   if (r && r.ok === false) { toast(r.error, 'error'); updatePlay(); return; }
@@ -166,7 +198,10 @@ function renderStores() {
     const el = document.createElement('div');
     el.className = 'store'; el.style.setProperty('--c', hexRgb(s.color));
     const busy = S.jobs.get(`store-${s.id}`);
-    el.innerHTML = `<div><h2 class="store-name"></h2><p class="store-works ${s.works === 'Hit and miss' ? 'meh' : 'good'}"></p></div><div class="store-row"></div>`;
+    const inst = S.items.find((i) => i.id === `store-${s.id}`);
+    const logo = inst?.art?.icon || storeLogo(s.id);
+    el.innerHTML = `${logo ? '<img class="store-logo" alt="">' : '<span class="store-logo mono" aria-hidden="true"></span>'}<div><h2 class="store-name"></h2><p class="store-works ${s.works === 'Hit and miss' ? 'meh' : 'good'}"></p></div><div class="store-row"></div>`;
+    if (logo) $('.store-logo', el).src = fileUrl(logo); else $('.store-logo', el).textContent = s.name[0];
     $('.store-name', el).textContent = s.name;
     $('.store-works', el).textContent = s.works;
     const row = $('.store-row', el);
@@ -195,7 +230,8 @@ function switchTab(tab) {
   $$('.tab').forEach((t) => { const on = t.dataset.tab === tab; t.classList.toggle('on', on); t.setAttribute('aria-selected', on); });
   $('#library').hidden = tab !== 'library';
   $('#stores').hidden = tab !== 'stores';
-  if (tab === 'stores') { renderStores(); setBackdrop(''); }
+  $('.foot').hidden = tab !== 'library';
+  if (tab === 'stores') { renderStores(); setBackdrop('', 'none'); }
   else { const it = S.items.find((i) => i.id === S.sel); if (it) select(it.id, false); }
 }
 

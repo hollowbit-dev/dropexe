@@ -14,6 +14,7 @@ const stores = require('./stores');
 const fixer = require('./fixer');
 const macapp = require('./macapp');
 const { download } = require('./net');
+const exeicon = require('./exeicon');
 const settings = () => require('./settings');
 engine.init(ROOT);
 library.init(ROOT);
@@ -143,6 +144,7 @@ ipcMain.handle('add-store', async (e, storeId) => {
     for (let i = 0; i < 30 && !(await engine.exists(exe)); i++) await new Promise((r) => setTimeout(r, 1000));
     if (!(await engine.exists(exe))) throw new Error(`${s.name} didn't finish installing. Try again, and if its installer opens, click through it.`);
     library.upsert({ id, kind: 'store', storeId: s.id, name: s.name, bottle: s.id, exe: s.exe, args: s.args, fix: s.fix, color: s.color });
+    await iconFor(library.get(id)).catch(() => {});
     jobDone(id);
     pushLibrary();
     play(id).catch(() => {});
@@ -227,7 +229,16 @@ function waitIdle(bottle, token) {
 }
 
 // ---------------------------------------------------------------- art
+// The program's own icon, taken from its .exe. Used for stores and anything without game art.
+async function iconFor(item) {
+  if (item.art?.icon && fs.existsSync(item.art.icon)) return;
+  const exe = engine.toUnix(item.bottle, item.exe);
+  if (!fs.existsSync(exe)) return;
+  const out = await exeicon.extract(exe, path.join(ROOT, 'art', `${item.id}-icon`));
+  if (out) { library.upsert({ id: item.id, art: { ...(library.get(item.id).art || {}), icon: out } }); pushLibrary(); }
+}
 async function art(item) {
+  iconFor(item).catch(() => {});
   try {
     if (!item.steamAppId && !item.artUrls) {
       const urls = await library.findArtByName(item.name);
@@ -367,6 +378,7 @@ ipcMain.handle('refresh', async () => {
   if (DEMO) return view();
   const found = [...(await library.scanSteam()), ...(await library.scanEpic())];
   for (const it of found) if (!it.art?.cover) art(it);
+  for (const it of library.all()) if (it.source !== 'steam' && !it.art?.icon) iconFor(it).catch(() => {});
   return view();
 });
 ipcMain.handle('remove', async (e, id) => {
