@@ -17,7 +17,7 @@ function reader(file) {
   return { read, close: () => fs.closeSync(fd) };
 }
 
-function findIcon(file) {
+function openResources(file, use) {
   const r = reader(file);
   try {
     const dos = r.read(0, 64);
@@ -59,6 +59,12 @@ function findIcon(file) {
       const d = r.read(base + e.to, 16);
       return r.read(off(d.readUInt32LE(0)), d.readUInt32LE(4));
     };
+    return use({ dir, leaf });
+  } finally { r.close(); }
+}
+
+function findIcon(file) {
+  return openResources(file, ({ dir, leaf }) => {
     const types = dir(0);
     const group = types.find((t) => t.id === 14);
     const icons = types.find((t) => t.id === 3);
@@ -77,7 +83,22 @@ function findIcon(file) {
     if (!best) return null;
     const data = leaf(iconById.get(best.id));
     return { data, ...best };
-  } finally { r.close(); }
+  });
+}
+
+// ProductName / FileDescription from the exe's version info, if it has one.
+function versionInfo(file) {
+  return openResources(file, ({ dir, leaf }) => {
+    const v = dir(0).find((t) => t.id === 16);
+    if (!v) return {};
+    const text = leaf(dir(v.to)[0]).toString('utf16le');
+    const out = {};
+    for (const key of ['ProductName', 'FileDescription', 'CompanyName']) {
+      const m = new RegExp(key + '\\0+([^\\0]+)').exec(text);
+      if (m) out[key] = m[1].trim();
+    }
+    return out;
+  }) || {};
 }
 
 // Write <out>.png. Returns the path, or null if the exe has no icon.
@@ -99,4 +120,4 @@ async function extract(exe, out) {
   return fs.existsSync(png) ? png : null;
 }
 
-module.exports = { extract, findIcon };
+module.exports = { extract, findIcon, versionInfo };

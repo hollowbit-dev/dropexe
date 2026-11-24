@@ -13,7 +13,7 @@ function hslRgb(h, s, l) {
 }
 const hexRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `${n >> 16 & 255} ${n >> 8 & 255} ${n & 255}`; };
 // Store logos ship with the app (taken from each store's own installer); anything else uses its exe's icon.
-const STORE_LOGOS = new Set(['steam', 'gog', 'battlenet', 'ea']);
+const STORE_LOGOS = new Set(['steam', 'epic', 'gog', 'battlenet', 'ubisoft', 'ea']);
 const storeLogo = (id) => (STORE_LOGOS.has(id) ? `stores/${id}.png` : null);
 const iconOf = (it) => it.art?.icon || (it.kind === 'store' ? storeLogo(it.storeId) : null);
 const colorOf = (it) => (it.color ? hexRgb(it.color) : hslRgb(hue(it.name), 55, 52));
@@ -200,7 +200,7 @@ function renderStores() {
     const busy = S.jobs.get(`store-${s.id}`);
     const inst = S.items.find((i) => i.id === `store-${s.id}`);
     const logo = inst?.art?.icon || storeLogo(s.id);
-    el.innerHTML = `${logo ? '<img class="store-logo" alt="">' : '<span class="store-logo mono" aria-hidden="true"></span>'}<div><h2 class="store-name"></h2><p class="store-works ${s.works === 'Hit and miss' ? 'meh' : 'good'}"></p></div><div class="store-row"></div>`;
+    el.innerHTML = `${logo ? '<img class="store-logo" alt="">' : '<span class="store-logo mono" aria-hidden="true"></span>'}<div><h2 class="store-name"></h2><p class="store-works ${s.broken ? 'no' : /click/i.test(s.works) ? 'meh' : 'good'}"></p></div><div class="store-row"></div>`;
     if (logo) $('.store-logo', el).src = fileUrl(logo); else $('.store-logo', el).textContent = s.name[0];
     $('.store-name', el).textContent = s.name;
     $('.store-works', el).textContent = s.works;
@@ -208,6 +208,7 @@ function renderStores() {
     const btn = document.createElement('button');
     if (s.added) { btn.className = 'btn glass'; btn.textContent = `Open ${s.name}`; btn.onclick = () => { S.sel = `store-${s.id}`; switchTab('library'); select(S.sel, true); playSel(); }; }
     else if (busy) { btn.className = 'btn glass'; btn.disabled = true; btn.textContent = busy.text; }
+    else if (s.broken) { btn.className = 'btn glass'; btn.disabled = true; btn.textContent = 'Not available yet'; btn.title = s.broken; const why = document.createElement('p'); why.className = 'store-why'; why.textContent = s.broken; row.before(why); }
     else { btn.className = 'btn primary'; btn.textContent = `Get ${s.name}`; btn.onclick = () => addStore(s.id); }
     row.append(btn);
     return el;

@@ -122,6 +122,7 @@ function envFor(bottleId, fix = {}) {
     // DXMT/DXVK need these to pick up our dlls instead of Wine's.
     WINEDLLOVERRIDES: g === 'dxvk' ? 'd3d11,d3d10core,dxgi=n,b' : 'd3d11,d3d10core,dxgi=b',
   };
+  if (fix.overrides) env.WINEDLLOVERRIDES += ';' + fix.overrides;
   if (g === 'dxmt') env.DXMT_LOG_LEVEL = 'none';
   if (g === 'dxvk') { env.DXVK_ASYNC = '1'; env.DXVK_LOG_LEVEL = 'none'; }
   if (fix.retina) env.WINE_RETINA = '1';
@@ -181,6 +182,7 @@ function killBottle(bottleId) {
 function toUnix(bottleId, winPath) {
   const m = /^([a-zA-Z]):\\(.*)$/.exec(winPath);
   if (!m) return winPath;
+  if (m[1].toUpperCase() === 'Z') return '/' + m[2].split('\\').join('/');
   return path.join(bottlePath(bottleId), 'drive_c', ...m[2].split('\\'));
 }
 function toWin(bottleId, unixPath) {

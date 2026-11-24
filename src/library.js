@@ -141,14 +141,14 @@ async function scanEpic() {
 async function listExes(bottle) {
   const roots = ['Program Files', 'Program Files (x86)', path.join('users')].map((r) => path.join(engine.bottlePath(bottle), 'drive_c', r));
   const out = new Map();
-  const SKIP = /^(unins|uninstall|setup|install|crash|vc_?redist|dxsetup|directx|dotnet|update|helper|report|launcherpatcher|ue4prereq)/i;
+  const SKIP = /^(unins|uninstall|setup|install|crash|vc_?redist|dxsetup|directx|dotnet|update|helper|report|launcherpatcher|ue4prereq|gup|elevate|7z|curl)/i;
   async function walk(dir, depth) {
     if (depth > 5) return;
     let ents; try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) {
-        if (/^(windows|Common Files|Windows NT|Internet Explorer|Windows Media Player|AppData|Temp)$/i.test(e.name)) continue;
+        if (/^(windows|Common Files|Windows NT|Internet Explorer|Windows Media Player|AppData|Temp|updater|_CommonRedist|redist|plugins)$/i.test(e.name)) continue;
         await walk(p, depth + 1);
       } else if (/\.exe$/i.test(e.name) && !SKIP.test(e.name)) {
         try { out.set(p, (await fsp.stat(p)).size); } catch { /* gone */ }
@@ -159,6 +159,18 @@ async function listExes(bottle) {
   return out;
 }
 
+// A name for a program: the product name inside the exe if it has one, else its folder, else the file name.
+const GENERIC_DIR = /^(bin|bin32|bin64|binaries|win32|win64|x64|x86|game|release|app|program|files|downloads|desktop|cd|disk\d*)$/i;
+function nameFor(file) {
+  try {
+    const v = require('./exeicon').versionInfo(file);
+    const n = (v.ProductName || v.FileDescription || '').trim();
+    if (n && /^[\x20-\x7e\u00c0-\u024f]+$/.test(n) && n.length <= 60 && !/^(setup|installer|launcher|game|application)$/i.test(n) && !/microsoft|windows/i.test(n)) return n;
+  } catch { /* no version info */ }
+  const dir = path.basename(path.dirname(file));
+  if (dir && !GENERIC_DIR.test(dir) && !/^[a-z]:$/i.test(dir)) return prettyName(dir);
+  return prettyName(file);
+}
 // Turn "MyGame-Win64-Shipping.exe" into "My Game".
 function prettyName(file) {
   let n = path.basename(file).replace(/\.(exe|msi)$/i, '');
@@ -168,4 +180,4 @@ function prettyName(file) {
 }
 const looksLikeInstaller = (file) => /\.msi$/i.test(file) || /(setup|install|installer|_inst)\b/i.test(path.basename(file)) || /^setup/i.test(path.basename(file));
 
-module.exports = { init, all, get, upsert, remove, newId, cacheArt, findArtByName, steamArt, scanSteam, scanEpic, listExes, prettyName, looksLikeInstaller };
+module.exports = { init, all, get, upsert, remove, newId, cacheArt, findArtByName, steamArt, scanSteam, scanEpic, listExes, prettyName, nameFor, looksLikeInstaller };

@@ -85,7 +85,7 @@ function view() {
 ipcMain.handle('state', async () => ({
   engine: DEMO ? { installed: true, version: engine.ENGINE_VERSION, rosetta: true } : await engine.status(),
   items: view(),
-  stores: stores.map(({ id, name, color, works }) => ({ id, name, color, works, added: DEMO ? ['steam', 'epic'].includes(id) : !!library.get(`store-${id}`) })),
+  stores: stores.map(({ id, name, color, works, broken }) => ({ id, name, color, works, broken, added: DEMO ? ['steam', 'epic'].includes(id) : !!library.get(`store-${id}`) })),
   steps: fixer.STEPS.map(({ id, label, detail }) => ({ id, label, detail })),
   version: app.getVersion(),
   settings: settings().get(),
@@ -124,7 +124,7 @@ function jobDone(id) { jobs.delete(id); send('job', { id, done: true }); }
 
 ipcMain.handle('add-store', async (e, storeId) => {
   const s = stores.find((x) => x.id === storeId);
-  if (!s) return { ok: false };
+  if (!s || s.broken) return { ok: false, error: s?.broken };
   const id = `store-${s.id}`;
   const log = logger(id);
   try {
@@ -137,7 +137,7 @@ ipcMain.handle('add-store', async (e, storeId) => {
       await download(s.installer.url, file, (f) => job(id, `Downloading ${s.name}`, 0.15 + f * 0.35));
       job(id, s.installer.args?.includes('/S') || s.installer.msi ? `Installing ${s.name}` : `Finish the ${s.name} installer`, 0.6);
       const args = s.installer.msi ? ['msiexec', '/i', file, '/qn'] : [file, ...(s.installer.args || [])];
-      await engine.runWine(s.id, args, { graphics: 'wined3d' }, log).done;
+      await engine.runWine(s.id, args, { graphics: 'wined3d', overrides: s.installer.overrides }, log).done;
       await fsp.rm(file, { force: true });
     }
     // Some installers start the store and return early; give them a moment to finish writing files.
@@ -175,7 +175,7 @@ ipcMain.handle('choose-files', async () => {
 
 async function addProgram(file, bottle, nameHint) {
   await engine.ensureBottle(bottle, () => {});
-  const name = nameHint || library.prettyName(file);
+  const name = nameHint || library.nameFor(file);
   const winPath = engine.toWin(bottle, file);
   const existing = library.all().find((i) => i.exe === winPath);
   if (existing) return { file, ok: true, id: existing.id, existed: true };
@@ -193,7 +193,9 @@ async function runInstaller(file) {
     await engine.ensureBottle(bottle, log);
     const before = await library.listExes(bottle);
     job(id, `Running ${path.basename(file)}. Click through its installer.`, 0.4);
-    const args = /\.msi$/i.test(file) ? ['msiexec', '/i', file] : [file];
+    // DROPEXE_TEST_SILENT=1 (tests only) runs installers without their windows.
+    const silent = process.env.DROPEXE_TEST_SILENT === '1';
+    const args = /\.msi$/i.test(file) ? ['msiexec', '/i', file, ...(silent ? ['/qn'] : [])] : [file, ...(silent ? ['/S'] : [])];
     await engine.runWine(bottle, args, { graphics: 'wined3d' }, log).done;
     // Wait for child processes (many installers hand off to a second exe) to finish.
     await waitIdle(bottle, path.basename(file));
@@ -202,7 +204,8 @@ async function runInstaller(file) {
     jobDone(id);
     if (!added.length) return { file, ok: false, error: 'The installer finished but nothing new turned up. If it installed somewhere else, drop that program here.' };
     // One obvious pick: add it straight away. Several: let the user choose.
-    const choices = added.map(([p, size]) => ({ path: p, name: library.prettyName(path.basename(path.dirname(p)).length > 2 ? path.basename(path.dirname(p)) : p), exe: path.basename(p), size }));
+    const choices = added.map(([p, size]) => ({ path: p, name: library.nameFor(p), exe: path.basename(p), size }));
+    if (choices.length === 1) return addProgram(choices[0].path, bottle, choices[0].name);
     return { file, ok: true, choose: choices, bottle };
   } catch (err) {
     jobDone(id);
@@ -253,7 +256,8 @@ async function art(item) {
 const running = new Map(); // id -> { token, startedAt, seen, bottle }
 function wineProcs() {
   return new Promise((resolve) => execFile('/bin/ps', ['-axo', 'command='], { maxBuffer: 8 * 1024 * 1024 }, (err, out) => {
-    resolve(err ? [] : out.split('\n').filter((l) => /^[A-Z]:\\/.test(l) || /\.exe\b/i.test(l)));
+    // Only Windows processes (their command starts with a drive letter); never our own Mac-side wine launcher.
+    resolve(err ? [] : out.split('\n').filter((l) => /^[A-Z]:\\/.test(l)));
   }));
 }
 // What to look for in the process list to know a game is still open.
@@ -309,13 +313,17 @@ function startWatcher() {
   setInterval(async () => {
     if (!running.size) return;
     const procs = (await wineProcs()).map((c) => c.toLowerCase());
+    // The program's own path is the first thing on its command line.
+    const exeOf = (c) => { const i = c.indexOf('.exe'); return i < 0 ? c : c.slice(0, i + 4); };
     for (const [id, r] of running) {
-      const alive = procs.some((c) => c.includes(r.token));
+      const alive = procs.some((c) => (r.token.endsWith('.exe') ? exeOf(c).endsWith('\\' + r.token) : c.includes(r.token)));
       if (alive && !r.seen) { r.seen = true; r.seenAt = Date.now(); send('playing', { id }); }
       const exited = r.proc.exitCode !== null;
       if (r.seen && !alive) { finish(id); continue; }
       // Never showed up: gone after 90 s, or the starter exited and nothing is left.
-      if (!r.seen && (Date.now() - r.startedAt > 90000 || (exited && Date.now() - r.startedAt > 20000))) finish(id);
+      // A starter that failed (non-zero exit) is done after a few seconds; one that exited cleanly may have handed off to a child.
+      const age = Date.now() - r.startedAt;
+      if (!r.seen && (age > 90000 || (exited && age > (r.proc.exitCode !== 0 ? 4000 : 20000)))) finish(id);
     }
   }, 2000);
 }
