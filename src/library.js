@@ -135,7 +135,7 @@ async function scanEpic() {
       id, kind: 'game', source: 'epic', name: m.DisplayName || m.AppName, bottle: 'epic',
       exe: `${m.InstallLocation}\\${m.LaunchExecutable}`.replace(/\//g, '\\'),
       args: (m.LaunchCommand || '').split(' ').filter(Boolean),
-      fix: prev?.fix || { graphics: 'dxmt' },
+      fix: prev?.fix || { graphics: 'dxvk' }, // Epic's own launcher crashed on Metal and ran on Vulkan
     }));
   }
   return found;
