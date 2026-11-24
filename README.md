@@ -20,7 +20,7 @@
 
 - **One shelf for every game.** *Find my games* pulls in your Steam library (with Steam's own art and logos), Windows games in your folders, and your Mac games.
 - **Drop an .exe.** Drag any Windows game, app or installer onto the window. DropExe runs installers, finds what they added, and names it with its real icon.
-- **One-click stores.** Steam and Epic Games install with one button. GOG Galaxy and Battle.net open their own installers.
+- **One-click stores.** Steam and Epic Games install with one button (Windows Steam games run: tested with Ultimate Custom Night). GOG Galaxy and Battle.net open their own installers.
 - **Make it run.** If a game crashes or won't start, DropExe tries one fix at a time (Metal, Vulkan or classic graphics, Microsoft runtimes, Windows 7 mode, a window) and keeps the first that works.
 - **Real Mac apps.** Add any game to Launchpad and Spotlight.
 - **The rest:** Retina sharpness switch, controller check, play time, and Remove that can move a game's files to the Trash.

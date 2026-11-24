@@ -192,7 +192,10 @@ async function ensureBottle(id, onLog = () => {}, engine = 'wine11') {
   if (await exists(path.join(p, 'system.reg'))) {
     if (engineOf(id) === engine) return p;
     // Made with the other engine (e.g. a Steam drive from before Wine 10): keep it aside, start fresh.
-    await fsp.rename(p, `${p}-old-${Date.now()}`);
+    const old = `${p}-old-${Date.now()}`;
+    await fsp.rename(p, old);
+    // Off to the Trash (not deleted), so it doesn't quietly keep gigabytes.
+    try { await require('electron').shell.trashItem(old); } catch { /* stays next to the new one */ }
   }
   await fsp.mkdir(p, { recursive: true });
   await fsp.writeFile(path.join(p, '.dropexe-engine'), engine);
