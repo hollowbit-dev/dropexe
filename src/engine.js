@@ -125,7 +125,6 @@ function envFor(bottleId, fix = {}) {
   if (fix.overrides) env.WINEDLLOVERRIDES += ';' + fix.overrides;
   if (g === 'dxmt') env.DXMT_LOG_LEVEL = 'none';
   if (g === 'dxvk') { env.DXVK_ASYNC = '1'; env.DXVK_LOG_LEVEL = 'none'; }
-  if (fix.retina) env.WINE_RETINA = '1';
   return env;
 }
 const wineBin = (fix = {}) => path.join((fix.graphics || 'dxmt') === 'dxmt' ? dirs().wineDxmt : dirs().wine, 'bin', 'wine');

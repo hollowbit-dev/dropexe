@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('dx', {
   fixCancel: call('fix-cancel'),
   refresh: call('refresh'),
   remove: call('remove'),
+  removeInfo: call('remove-info'),
+  setRetina: call('set-retina'),
   rename: call('rename'),
   macApp: call('mac-app'),
   showMacApp: call('show-mac-app'),

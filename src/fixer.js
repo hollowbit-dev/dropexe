@@ -31,10 +31,19 @@ async function prep(step, bottle, onLog) {
   }
 }
 
-// Applied before every launch (cheap registry writes).
+// Applied before every launch: one registry import (one Wine start), then the graphics files.
 async function applyFix(bottle, fix, onLog) {
   const winver = fix.winver || 'win10';
-  await engine.runWine(bottle, ['reg', 'add', 'HKCU\\Software\\Wine', '/v', 'Version', '/d', winver, '/f'], fix, onLog).done;
+  const reg = [
+    'REGEDIT4', '',
+    '[HKEY_CURRENT_USER\\Software\\Wine]', `"Version"="${winver}"`, '',
+    // Retina: draw at the screen's full sharpness, and tell Windows the screen is high-DPI so text isn't tiny.
+    '[HKEY_CURRENT_USER\\Software\\Wine\\Mac Driver]', `"RetinaMode"="${fix.retina ? 'y' : 'n'}"`, '',
+    '[HKEY_CURRENT_USER\\Control Panel\\Desktop]', `"LogPixels"=dword:${fix.retina ? '000000c0' : '00000060'}`, '',
+  ].join('\r\n');
+  const file = path.join(engine.bottlePath(bottle), 'dropexe-settings.reg');
+  fs.writeFileSync(file, reg);
+  await engine.runWine(bottle, ['regedit', '/S', file], fix, onLog).done;
   await engine.prepareGraphics(bottle, fix);
 }
 

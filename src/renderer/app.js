@@ -321,6 +321,64 @@ function choose(list) {
   });
 }
 
+// ---------------------------------------------------------------- remove (optionally moving files to the Trash)
+const fmtBytes = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+async function openRemove(it) {
+  $('#remove-title').textContent = `Remove ${it.name}?`;
+  $('#remove-text').textContent = it.kind === 'store' ? `${it.name} leaves your library.` : it.mac ? 'It leaves DropExe. The game itself stays on your Mac.'
+    : /^steam|epic/.test(it.source || '') ? `It leaves DropExe. To delete the game itself, uninstall it in ${it.source === 'epic' ? 'Epic Games' : 'Steam'}.` : 'It leaves your library.';
+  const row = $('#remove-files-row'); row.hidden = true; $('#remove-files').checked = false;
+  $('#remove-sheet').hidden = false;
+  $('#remove-ok').focus();
+  const info = await dx.removeInfo(it.id);
+  if (info.canDelete) {
+    row.hidden = false;
+    $('#remove-files-label').textContent = `Also move ${fmtBytes(info.bytes)} to the Trash`;
+    $('#remove-files-sub').textContent = `That's ${info.what}. You can get it back from the Trash.`;
+  }
+  $('#remove-ok').onclick = async () => {
+    $('#remove-sheet').hidden = true;
+    const files = !row.hidden && $('#remove-files').checked;
+    const r = await dx.remove(it.id, files);
+    if (r.ok === false) toast(r.error, 'error');
+    else toast(r.trashed ? `${it.name} removed, and ${fmtBytes(info.bytes)} moved to the Trash.` : `${it.name} removed.`);
+  };
+}
+$('#remove-cancel').onclick = () => { $('#remove-sheet').hidden = true; };
+
+// ---------------------------------------------------------------- controller check
+// Standard Gamepad layout: buttons 0-16. Shows what macOS sees; Windows games get the same controller.
+const PAD_BUTTONS = [['A', 0], ['B', 1], ['X', 2], ['Y', 3], ['LB', 4], ['RB', 5], ['LT', 6], ['RT', 7], ['View', 8], ['Menu', 9], ['L3', 10], ['R3', 11], ['Up', 12], ['Down', 13], ['Left', 14], ['Right', 15], ['Home', 16]];
+let padLoop = 0;
+function openPads() {
+  $('#pad-sheet').hidden = false;
+  const box = $('#pads');
+  const tick = () => {
+    const pads = [...navigator.getGamepads()].filter(Boolean);
+    $('#pad-text').textContent = pads.length ? `${pads.length === 1 ? 'One controller' : `${pads.length} controllers`} connected. Press buttons and move the sticks to check them. Most Windows games will see ${pads.length === 1 ? 'it' : 'them'} too.`
+      : 'No controller yet. Connect one with Bluetooth or a cable, then press any button on it. (macOS only shows a controller after its first button press.)';
+    if (box.childElementCount !== pads.length || [...box.children].some((c, i) => c.dataset.id !== pads[i].id)) {
+      box.replaceChildren(...pads.map((p) => {
+        const el = document.createElement('div'); el.className = 'pad'; el.dataset.id = p.id;
+        el.innerHTML = '<p class="pad-name"></p><div class="sticks"><span class="stick"><i></i></span><span class="stick"><i></i></span></div><div class="pad-btns"></div>';
+        $('.pad-name', el).textContent = p.id.replace(/\s*\(.*?Vendor.*\)$/i, '').replace(/\(STANDARD GAMEPAD.*\)/i, '').trim() || 'Controller';
+        $('.pad-btns', el).replaceChildren(...PAD_BUTTONS.filter(([, i]) => i < p.buttons.length).map(([n, i]) => { const b = document.createElement('span'); b.className = 'pb'; b.dataset.i = i; b.textContent = n; return b; }));
+        return el;
+      }));
+    }
+    pads.forEach((p, k) => {
+      const el = box.children[k];
+      $$('.pb', el).forEach((b) => { const v = p.buttons[b.dataset.i]; b.classList.toggle('on', !!(v && (v.pressed || v.value > 0.3))); });
+      const st = $$('.stick i', el);
+      [[0, 1], [2, 3]].forEach(([x, y], j) => { st[j].style.transform = `translate(${(p.axes[x] || 0) * 22}px, ${(p.axes[y] || 0) * 22}px)`; });
+    });
+    padLoop = requestAnimationFrame(tick);
+  };
+  tick();
+}
+$('#pad-btn').onclick = openPads;
+$('#pad-close').onclick = () => { $('#pad-sheet').hidden = true; cancelAnimationFrame(padLoop); };
+
 // ---------------------------------------------------------------- Find my games
 async function findGames() {
   const sheet = $('#import-sheet'), list = $('#import-list'), ok = $('#import-ok');
@@ -415,7 +473,11 @@ function openMenu(anchor) {
   if (!it) return;
   const m = $('#menu');
   const g = it.fix?.graphics || 'dxmt';
-  $$('[data-act^="graphics-"]', m).forEach((b) => b.classList.toggle('on', b.dataset.act === `graphics-${g}`));
+  $$('[data-act^="graphics-"]', m).forEach((b) => { b.classList.toggle('on', b.dataset.act === `graphics-${g}`); b.hidden = !!it.mac; });
+  $('[data-act="retina"]', m).classList.toggle('on', !!it.fix?.retina);
+  $('[data-act="retina"]', m).hidden = !!it.mac;
+  $('[data-act="drive"]', m).hidden = !!it.mac;
+  $$('hr', m).forEach((h, i) => { h.hidden = !!it.mac && i < 2; });
   m.hidden = false;
   const r = anchor.getBoundingClientRect();
   const h = m.offsetHeight;
@@ -434,7 +496,8 @@ $('#menu').addEventListener('click', async (e) => {
   else if (act.startsWith('graphics-')) { await dx.setGraphics(it.id, act.slice(9)); toast(`${it.name} now uses ${GRAPHICS[act.slice(9)].toLowerCase()}.`); }
   else if (act === 'drive') dx.openDrive(it.id);
   else if (act === 'log') { $('#log-text').textContent = (await dx.log(it.id)) || 'Nothing yet. Press Play first.'; $('#log-sheet').hidden = false; }
-  else if (act === 'remove') { await dx.remove(it.id); toast(it.kind === 'store' ? `${it.name} removed from the library. Its games and drive are kept.` : `${it.name} removed. Its files are untouched.`); }
+  else if (act === 'retina') { const on = !it.fix?.retina; await dx.setRetina(it.id, on); toast(on ? `${it.name} will draw at full Retina sharpness next time you play.` : `${it.name} is back to normal resolution.`); }
+  else if (act === 'remove') openRemove(it);
 });
 function renameInline(it) {
   const t = $('#hero-title');
@@ -513,7 +576,7 @@ $('#by').onclick = () => window.open('https://hollowbit.dev/');
 
 document.addEventListener('keydown', (e) => {
   if (e.target.isContentEditable || !$('#fix-sheet').hidden || !$('#pick-sheet').hidden || !$('#import-sheet').hidden) return;
-  if (e.key === 'Escape') { $('#menu').hidden = true; $('#log-sheet').hidden = true; }
+  if (e.key === 'Escape') { $('#menu').hidden = true; $('#log-sheet').hidden = true; $('#remove-sheet').hidden = true; if (!$('#pad-sheet').hidden) $('#pad-close').click(); }
   if (S.tab !== 'library' || !$('#menu').hidden) return;
   const list = ordered(); const i = list.findIndex((x) => x.id === S.sel);
   if (e.key === 'ArrowRight' && i < list.length - 1) { e.preventDefault(); select(list[i + 1].id, true); }

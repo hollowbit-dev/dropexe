@@ -16,6 +16,7 @@
   </nav>
   <div class="top-right">
     <div class="job" id="job" hidden><span class="job-bar"><i></i></span><span class="job-text"></span></div>
+    <button class="btn ghost sm icon-sm" id="pad-btn" aria-label="Check controllers" title="Check controllers"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M5.5 3h9a4.5 4.5 0 0 1 4.4 5.4l-.8 4a2.3 2.3 0 0 1-4 1L12.3 11H7.7l-1.8 2.4a2.3 2.3 0 0 1-4-1l-.8-4A4.5 4.5 0 0 1 5.5 3Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 6v3M4.5 7.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="13.5" cy="6.5" r="1" fill="currentColor"/><circle cx="15" cy="8.5" r="1" fill="currentColor"/></svg></button>
     <button class="btn ghost sm" id="find-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Find my games</button>
     <button class="btn ghost sm" id="add-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Add a Windows program</button>
   </div>
@@ -77,6 +78,8 @@
 <div class="menu" id="menu" role="menu" hidden>
   <button role="menuitem" data-act="rename">Rename</button>
   <hr>
+  <button role="menuitem" data-act="retina">Sharper graphics (Retina)</button>
+  <hr>
   <button role="menuitem" data-act="graphics-dxmt">Graphics: Metal</button>
   <button role="menuitem" data-act="graphics-dxvk">Graphics: Vulkan</button>
   <button role="menuitem" data-act="graphics-wined3d">Graphics: Classic</button>
@@ -118,6 +121,26 @@
     <p class="sheet-text" id="import-text">Looking through Steam and your folders…</p>
     <div class="import" id="import-list"></div>
     <div class="sheet-foot"><button class="btn ghost" id="import-cancel">Cancel</button><button class="btn primary" id="import-ok" disabled>Add games</button></div>
+  </div>
+</div>
+
+<!-- remove -->
+<div class="sheet" id="remove-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="remove-title">
+  <div class="sheet-card">
+    <h2 id="remove-title" class="sheet-title">Remove</h2>
+    <p class="sheet-text" id="remove-text"></p>
+    <label class="check" id="remove-files-row" hidden><input type="checkbox" id="remove-files"><span><b id="remove-files-label">Also move its files to the Trash</b><small id="remove-files-sub"></small></span></label>
+    <div class="sheet-foot"><button class="btn ghost" id="remove-cancel">Cancel</button><button class="btn danger" id="remove-ok">Remove</button></div>
+  </div>
+</div>
+
+<!-- controllers -->
+<div class="sheet" id="pad-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="pad-title">
+  <div class="sheet-card wide">
+    <h2 id="pad-title" class="sheet-title">Controllers</h2>
+    <p class="sheet-text" id="pad-text">Press any button on your controller.</p>
+    <div class="pads" id="pads" aria-live="polite"></div>
+    <div class="sheet-foot"><button class="btn primary" id="pad-close">Done</button></div>
   </div>
 </div>
 

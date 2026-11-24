@@ -477,12 +477,36 @@ ipcMain.handle('refresh', async () => {
   for (const it of library.all()) if (it.source !== 'steam' && !it.art?.icon) iconFor(it).catch(() => {});
   return view();
 });
-ipcMain.handle('remove', async (e, id) => {
+// What removing an item could also delete. Files go to the Trash (never deleted outright), and only files DropExe made.
+function filesOf(item) {
+  if (!item || item.mac) return null;
+  if (item.kind === 'store') return { path: engine.bottlePath(item.bottle), what: `${item.name} and every game installed in it` };
+  if (item.source === 'steam' || item.source === 'epic') return null; // uninstall those inside their store
+  const m = /^C:\\(Program Files(?: \(x86\))?|users\\[^\\]+\\AppData\\(?:Local|Roaming))\\([^\\]+)\\/i.exec(item.exe || '');
+  if (!m) return null; // a program the user dropped from their own folders: never touch it
+  const dir = engine.toUnix(item.bottle, `C:\\${m[1]}\\${m[2]}`);
+  // Only if no other item lives in the same folder.
+  if (library.all().some((i) => i.id !== item.id && i.bottle === item.bottle && (i.exe || '').toLowerCase().startsWith(`c:\\${m[1]}\\${m[2]}\\`.toLowerCase()))) return null;
+  return { path: dir, what: `the ${m[2]} folder it was installed to` };
+}
+const sizeOf = (p) => new Promise((res) => execFile('/usr/bin/du', ['-sk', p], (e, out) => res(e ? 0 : Number(String(out).split('\t')[0]) * 1024)));
+ipcMain.handle('remove-info', async (e, id) => {
+  const f = filesOf(library.get(id));
+  if (!f || !fs.existsSync(f.path)) return { canDelete: false };
+  return { canDelete: true, what: f.what, bytes: await sizeOf(f.path) };
+});
+ipcMain.handle('remove', async (e, id, alsoFiles) => {
   const item = library.get(id);
-  if (!item) return;
-  if (macapp.has(item)) await macapp.removeApp(item);
-  library.remove(id);
+  if (!item) return { ok: false };
+  if (running.has(id) || item.kind === 'store') await engine.killBottle(item.bottle).catch(() => {});
+  const f = alsoFiles ? filesOf(item) : null;
+  if (f && fs.existsSync(f.path)) {
+    try { await shell.trashItem(f.path); } catch (err) { return { ok: false, error: `Couldn't move the files to the Trash: ${err.message}` }; }
+  }
+  const gone = item.kind === 'store' && f ? library.all().filter((i) => i.bottle === item.bottle) : [item];
+  for (const it of gone) { if (macapp.has(it)) await macapp.removeApp(it); library.remove(it.id); }
   pushLibrary();
+  return { ok: true, trashed: !!f };
 });
 ipcMain.handle('rename', (e, id, name) => { if (name && name.trim()) library.upsert({ id, name: name.trim().slice(0, 80) }); pushLibrary(); });
 ipcMain.handle('mac-app', async (e, id) => {
@@ -499,6 +523,11 @@ ipcMain.handle('open-drive', (e, id) => {
   shell.openPath(path.join(engine.bottlePath(bottle), 'drive_c'));
 });
 ipcMain.handle('reset-fix', (e, id) => { library.upsert({ id, fix: { graphics: 'dxmt' }, fixedWith: null }); pushLibrary(); });
+ipcMain.handle('set-retina', (e, id, on) => {
+  const i = library.get(id);
+  if (i) library.upsert({ id, fix: { ...(i.fix || {}), retina: !!on } });
+  pushLibrary();
+});
 ipcMain.handle('set-graphics', (e, id, graphics) => {
   const i = library.get(id);
   if (i && engine.GRAPHICS.includes(graphics)) library.upsert({ id, fix: { ...(i.fix || {}), graphics } });
