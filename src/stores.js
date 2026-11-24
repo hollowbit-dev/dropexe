@@ -5,8 +5,9 @@ module.exports = [
     id: 'steam', name: 'Steam', color: '#1b9cf2', works: 'Works great',
     installer: { url: 'https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe', file: 'SteamSetup.exe', args: ['/S'] },
     exe: 'C:\\Program Files (x86)\\Steam\\steam.exe',
-    args: ['-cef-disable-gpu-compositing'],
-    fix: { graphics: 'dxmt' },
+    args: [],
+    engine: 'wine10', // Steam's window is black on Wine 11 (tested 24 Nov 2026)
+    fix: { graphics: 'wined3d' },
   },
   {
     id: 'epic', name: 'Epic Games', color: '#e6e6e6', works: 'Works',

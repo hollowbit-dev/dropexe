@@ -88,7 +88,7 @@ function view() {
 ipcMain.handle('state', async () => ({
   engine: DEMO ? { installed: true, version: engine.ENGINE_VERSION, rosetta: true } : await engine.status(),
   items: view(),
-  stores: stores.map(({ id, name, color, works, broken }) => ({ id, name, color, works, broken, added: DEMO ? ['steam', 'epic'].includes(id) : !!library.get(`store-${id}`) })),
+  stores: stores.map(({ id, name, color, works, broken }) => ({ id, name, color, works, broken, added: DEMO ? ['steam', 'epic'].includes(id) : !!library.get(`store-${id}`) && (stores.find((x) => x.id === id).engine || 'wine11') === engine.engineOf(id) })),
   steps: fixer.STEPS.map(({ id, label, detail }) => ({ id, label, detail })),
   version: app.getVersion(),
   settings: settings().get(),
@@ -131,8 +131,9 @@ ipcMain.handle('add-store', async (e, storeId) => {
   const id = `store-${s.id}`;
   const log = logger(id);
   try {
-    job(id, 'Making a Windows drive', 0.05);
-    await engine.ensureBottle(s.id, log);
+    if (s.engine === 'wine10') await engine.ensureWine10((f) => job(id, `Getting the engine ${s.name} needs`, f * 0.3));
+    job(id, 'Making a Windows drive', 0.32);
+    await engine.ensureBottle(s.id, log, s.engine || 'wine11');
     const exe = engine.toUnix(s.id, s.exe);
     if (!(await engine.exists(exe))) {
       const file = path.join(engine.dirs().downloads, s.installer.file);
@@ -146,7 +147,7 @@ ipcMain.handle('add-store', async (e, storeId) => {
     // Some installers start the store and return early; give them a moment to finish writing files.
     for (let i = 0; i < 30 && !(await engine.exists(exe)); i++) await new Promise((r) => setTimeout(r, 1000));
     if (!(await engine.exists(exe))) throw new Error(`${s.name} didn't finish installing. Try again, and if its installer opens, click through it.`);
-    library.upsert({ id, kind: 'store', storeId: s.id, name: s.name, bottle: s.id, exe: s.exe, args: s.args, fix: s.fix, color: s.color });
+    library.upsert({ id, kind: 'store', storeId: s.id, name: s.name, bottle: s.id, exe: s.exe, args: s.args, fix: s.fix, color: s.color, engine: s.engine || 'wine11' });
     await iconFor(library.get(id)).catch(() => {});
     jobDone(id);
     pushLibrary();
@@ -271,7 +272,12 @@ function tokenFor(item) {
 
 async function launch(item, fix) {
   const log = logger(item.id);
-  await engine.ensureBottle(item.bottle, log);
+  const want = stores.find((x) => x.id === item.bottle)?.engine || 'wine11';
+  if (want !== engine.engineOf(item.bottle) && fs.existsSync(engine.bottlePath(item.bottle))) {
+    // An older Steam drive made on Wine 11: its window is black. Rebuild it on Wine 10.
+    throw new Error(`${stores.find((x) => x.id === item.bottle)?.name || 'This store'} needs a quick reinstall to fix its window. Open Stores and press Get again.`);
+  }
+  await engine.ensureBottle(item.bottle, log, want);
   await fixer.applyFix(item.bottle, fix, log);
   let args = [item.exe, ...(item.args || [])];
   if (fix.desktop) args = ['explorer', `/desktop=DropExe,${fix.desktop}`, ...args];
@@ -293,6 +299,7 @@ async function play(id) {
   if (item.mac) return playMac(item);
   if (item.source === 'steam' && item.notInstalled) {
     if (!library.get('store-steam')) throw new Error('This is a Windows game. Get Steam in Stores first, sign in, then press Install.');
+    if (engine.engineOf('steam') !== 'wine10') throw new Error('Steam needs a quick reinstall to fix its window. Open Stores and press Get Steam.');
     const steamItem = library.get('store-steam');
     engine.runWine('steam', [steamItem.exe, ...steamItem.args, `steam://install/${item.steamAppId}`], steamItem.fix || {}, logger(id));
     return { ok: true, installing: true };
