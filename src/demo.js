@@ -1,7 +1,7 @@
 // Demo library for screenshots (DROPEXE_DEMO=1). Touches nothing; art is cached to the demo data folder.
 const path = require('path');
 const fs = require('fs');
-const art = (id) => ({ cover: `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_600x900_2x.jpg`, hero: `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_hero.jpg` });
+const art = (id) => ({ logo: `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/logo.png`, cover: `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_600x900_2x.jpg`, hero: `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_hero.jpg` });
 const H = 3600e3;
 const games = [
   ['Hades', 1145360, 31 * H, 'dxmt'],
