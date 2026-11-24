@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https://cdn.cloudflare.steamstatic.com; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>DropExe</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"><div class="bd bd-a"></div><div class="bd bd-b"></div><div class="bd-shade"></div></div>
+
+<header class="top">
+  <nav class="tabs" role="tablist">
+    <button role="tab" class="tab on" data-tab="library" aria-selected="true">Library</button>
+    <button role="tab" class="tab" data-tab="stores" aria-selected="false">Stores</button>
+  </nav>
+  <div class="top-right">
+    <div class="job" id="job" hidden><span class="job-bar"><i></i></span><span class="job-text"></span></div>
+    <button class="btn ghost" id="add-btn">Add a Windows program</button>
+  </div>
+</header>
+
+<!-- first run -->
+<section class="setup" id="setup" hidden>
+  <div class="setup-inner">
+    <h1 class="setup-title">Windows games<br>on your Mac</h1>
+    <p class="setup-text">DropExe needs a one-time download of its Windows engine. It's about <span id="setup-size">236</span> MB and stays inside DropExe.</p>
+    <div class="setup-bar" id="setup-bar" hidden><i></i></div>
+    <p class="setup-step" id="setup-step" aria-live="polite"></p>
+    <button class="btn primary big" id="setup-go">Set up DropExe</button>
+  </div>
+</section>
+
+<!-- library -->
+<main class="view" id="library">
+  <section class="hero" id="hero">
+    <div class="hero-copy">
+      <p class="hero-kind" id="hero-kind"></p>
+      <h1 class="hero-title" id="hero-title"></h1>
+      <div class="hero-actions">
+        <button class="btn primary big" id="play-btn">Play</button>
+        <button class="btn glass" id="fix-btn">Make it run</button>
+        <button class="btn glass" id="mac-btn">Add to Launchpad</button>
+        <button class="btn icon glass" id="more-btn" aria-label="More options" aria-haspopup="menu">•••</button>
+      </div>
+      <p class="hero-meta" id="hero-meta"></p>
+    </div>
+  </section>
+  <section class="shelf-wrap">
+    <div class="shelf" id="shelf" role="listbox" aria-label="Your games and apps"></div>
+  </section>
+  <section class="empty" id="empty" hidden>
+    <h1 class="empty-title">Drop a Windows<br>game here</h1>
+    <p class="empty-text">Drag any .exe or installer onto this window, or add a store like Steam in one click.</p>
+    <div class="empty-actions">
+      <button class="btn primary big" data-store="steam">Get Steam</button>
+      <button class="btn glass big" data-goto="stores">See all stores</button>
+    </div>
+  </section>
+</main>
+
+<!-- stores -->
+<main class="view" id="stores" hidden>
+  <div class="stores-head">
+    <h1 class="stores-title">Stores</h1>
+    <p class="stores-text">Each store installs into its own Windows drive, so one never breaks another. Your games show up in Library by themselves.</p>
+  </div>
+  <div class="stores-grid" id="stores-grid"></div>
+</main>
+
+<!-- drag an .exe over the window: the hero turns into a big prompt, the shelf opens a slot -->
+<div class="dropzone" id="dropzone" hidden><h1 class="drop-title" id="slot-name">Drop to add</h1><p class="drop-text" id="drop-text">Games, apps and installers. DropExe works out the rest.</p></div>
+
+<!-- more menu -->
+<div class="menu" id="menu" role="menu" hidden>
+  <button role="menuitem" data-act="rename">Rename</button>
+  <button role="menuitem" data-act="graphics-dxmt">Graphics: Metal</button>
+  <button role="menuitem" data-act="graphics-dxvk">Graphics: Vulkan</button>
+  <button role="menuitem" data-act="graphics-wined3d">Graphics: Classic</button>
+  <button role="menuitem" data-act="drive">Show its Windows drive</button>
+  <button role="menuitem" data-act="log">Show what happened last time</button>
+  <button role="menuitem" data-act="remove" class="danger">Remove from DropExe</button>
+</div>
+
+<!-- Make it run -->
+<div class="sheet" id="fix-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="fix-title">
+  <div class="sheet-card">
+    <h2 id="fix-title" class="sheet-title">Making it run</h2>
+    <p class="sheet-text" id="fix-text">DropExe tries one change at a time and keeps the first one that works.</p>
+    <ol class="steps" id="fix-steps"></ol>
+    <div class="ask" id="fix-ask" hidden>
+      <p class="ask-q">The game stayed open. Does it look right?</p>
+      <div class="ask-btns"><button class="btn primary" id="fix-yes">Yes, it works</button><button class="btn glass" id="fix-no">No, try the next fix</button></div>
+    </div>
+    <div class="sheet-foot"><button class="btn ghost" id="fix-close">Stop trying</button></div>
+  </div>
+</div>
+
+<!-- pick what an installer added -->
+<div class="sheet" id="pick-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="pick-title">
+  <div class="sheet-card">
+    <h2 id="pick-title" class="sheet-title">What did you install?</h2>
+    <p class="sheet-text">The installer added these programs. Pick the ones to put in your library.</p>
+    <div class="picks" id="picks"></div>
+    <div class="sheet-foot"><button class="btn ghost" id="pick-cancel">Cancel</button><button class="btn primary" id="pick-ok">Add to library</button></div>
+  </div>
+</div>
+
+<!-- log -->
+<div class="sheet" id="log-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="log-title">
+  <div class="sheet-card wide">
+    <h2 id="log-title" class="sheet-title">What happened</h2>
+    <pre class="log" id="log-text"></pre>
+    <div class="sheet-foot"><button class="btn primary" id="log-close">Done</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<footer class="foot"><button class="link" id="by">DropExe <span id="ver"></span> by Hollowbit</button><span class="update" id="update" hidden></span></footer>
+<script src="app.js"></script>
+</body>
+</html>

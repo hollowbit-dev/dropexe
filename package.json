@@ -1,0 +1,38 @@
+{
+  "name": "dropexe",
+  "productName": "DropExe",
+  "version": "1.0.0",
+  "description": "Run Windows games and apps on your Mac. Free, with one-click Steam and a Make it run button.",
+  "main": "src/main.js",
+  "private": true,
+  "author": "Hollowbit Studio",
+  "license": "MIT",
+  "homepage": "https://hollowbit.dev/dropexe/",
+  "repository": "github:hollowbit-dev/dropexe",
+  "scripts": {
+    "start": "electron .",
+    "demo": "DROPEXE_DEMO=1 DROPEXE_USERDATA=/tmp/dropexe-demo electron .",
+    "dist:mac": "electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "playwright": "1.48"
+  },
+  "build": {
+    "appId": "dev.hollowbit.dropexe",
+    "productName": "DropExe",
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "assets/icon.png", "package.json"],
+    "protocols": [{ "name": "DropExe", "schemes": ["dropexe"] }],
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64"] }],
+      "category": "public.app-category.games",
+      "icon": "assets/icon.png",
+      "identity": null,
+      "minimumSystemVersion": "13.0",
+      "artifactName": "DropExe-${version}-mac-${arch}.${ext}",
+      "fileAssociations": [{ "ext": ["exe", "msi"], "name": "Windows program", "role": "Viewer" }]
+    }
+  }
+}

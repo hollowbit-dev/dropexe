@@ -1,0 +1,19 @@
+// Screenshots of the demo library for review. node test/shots.mjs
+import { _electron as electron } from 'playwright';
+const out = process.argv[2] || '/tmp/dropexe-shots';
+const app = await electron.launch({ args: ['.'], env: { ...process.env, DROPEXE_DEMO: '1', DROPEXE_USERDATA: '/tmp/dropexe-demo' } });
+const w = await app.firstWindow();
+await w.setViewportSize({ width: 1280, height: 800 });
+await w.waitForTimeout(3500);
+await w.screenshot({ path: `${out}-library.png` });
+await w.keyboard.press('ArrowRight'); await w.keyboard.press('ArrowRight');
+await w.waitForTimeout(1500);
+await w.screenshot({ path: `${out}-library2.png` });
+await w.click('.tab[data-tab="stores"]'); await w.waitForTimeout(600);
+await w.screenshot({ path: `${out}-stores.png` });
+await w.click('.tab[data-tab="library"]'); await w.waitForTimeout(400);
+await w.evaluate(() => window.__dragUi(true));
+await w.waitForTimeout(700);
+await w.screenshot({ path: `${out}-drop.png` });
+await w.evaluate(() => window.__dragUi(false));
+await app.close();
