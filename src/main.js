@@ -328,6 +328,7 @@ function finish(id) {
   const r = running.get(id);
   if (!r) return;
   running.delete(id);
+  if (id.startsWith('store-')) rescanStores();
   const item = library.get(id);
   if (item && r.seen) library.upsert({ id, playMs: (item.playMs || 0) + (Date.now() - r.startedAt) });
   pushLibrary();
@@ -346,8 +347,18 @@ function playMac(item) {
 }
 
 // Every 2 seconds: which games are actually open? Feeds the "Playing" state, play time and the fixer.
+let ticks = 0;
+async function rescanStores() {
+  try {
+    const before = JSON.stringify(library.all().map((i) => [i.id, i.notInstalled, i.installing]));
+    await library.scanSteam(); await library.scanEpic();
+    if (JSON.stringify(library.all().map((i) => [i.id, i.notInstalled, i.installing])) !== before) pushLibrary();
+  } catch { /* store folder busy */ }
+}
 function startWatcher() {
   setInterval(async () => {
+    // While a store is open, games installed or removed inside it show up here within 30 seconds.
+    if (++ticks % 15 === 0 && [...running.keys()].some((id) => id.startsWith('store-'))) rescanStores();
     if (!running.size) return;
     const every = (await allProcs()).map((c) => c.toLowerCase());
     const procs = every.filter((l) => /^[a-z]:\\/.test(l));

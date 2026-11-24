@@ -593,3 +593,11 @@ document.addEventListener('keydown', (e) => {
   renderShelf();
 })();
 window.__dragUi = (on, bad) => dragUi(on, bad); // used by test/shots.mjs
+// Coming back to the window picks up games installed meanwhile (in Steam, Epic or elsewhere).
+let lastFocusScan = 0;
+window.addEventListener('focus', async () => {
+  if (!S.engine?.installed || Date.now() - lastFocusScan < 10000) return;
+  lastFocusScan = Date.now();
+  S.items = await dx.refresh();
+  renderShelf();
+});
