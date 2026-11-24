@@ -1,0 +1,23 @@
+// Find my games against this Mac's real Steam and folders. node test/import.mjs <userdata> <shotprefix>
+import { _electron as electron } from 'playwright';
+const [ud, out] = process.argv.slice(2);
+const app = await electron.launch({ args: ['.'], env: { ...process.env, DROPEXE_USERDATA: ud } });
+const w = await app.firstWindow();
+w.on('pageerror', (e) => console.log('[pageerror]', e.message));
+await w.setViewportSize({ width: 1280, height: 800 });
+await w.waitForTimeout(1500);
+await w.click('#empty-find');
+for (let i = 0; i < 240 && await w.isDisabled('#import-ok'); i++) await w.waitForTimeout(500);
+await w.waitForTimeout(800);
+await w.screenshot({ path: `${out}-sheet.png` });
+console.log(await w.evaluate(() => [...document.querySelectorAll('.import-h')].map((h) => h.textContent).join(' | ')));
+console.log(await w.evaluate(() => [...document.querySelectorAll('.import-item')].map((l) => (l.querySelector('input').checked ? '[x] ' : '[ ] ') + l.querySelector('b').textContent).join('\n')));
+await w.click('#import-ok');
+await w.waitForSelector('#import-sheet', { state: 'hidden', timeout: 120000 });
+await w.waitForTimeout(3000);
+await w.screenshot({ path: `${out}-lib1.png` });
+for (let i = 0; i < 3; i++) await w.keyboard.press('ArrowRight');
+await w.waitForTimeout(1500); await w.screenshot({ path: `${out}-lib2.png` });
+for (let i = 0; i < 6; i++) await w.keyboard.press('ArrowRight');
+await w.waitForTimeout(1500); await w.screenshot({ path: `${out}-lib3.png` });
+await app.close();

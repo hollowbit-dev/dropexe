@@ -120,4 +120,15 @@ async function extract(exe, out) {
   return fs.existsSync(png) ? png : null;
 }
 
-module.exports = { extract, findIcon, versionInfo };
+// 2 = a windowed (GUI) program, 3 = a command-line tool. Games are always windowed.
+function subsystem(file) {
+  const r = reader(file);
+  try {
+    const pe = r.read(0, 64).readUInt32LE(0x3c);
+    const h = r.read(pe, 24 + 70);
+    if (h.toString('latin1', 0, 4) !== 'PE\0\0') return 0;
+    return h.readUInt16LE(24 + 68);
+  } catch { return 0; } finally { r.close(); }
+}
+
+module.exports = { extract, findIcon, versionInfo, subsystem };

@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('dx', {
   openDrive: call('open-drive'),
   setGraphics: call('set-graphics'),
   log: call('log'),
+  scanGames: call('scan-games'),
+  importGames: call('import-games'),
   on: {
     update: on('update'), engine: on('engine-progress'), library: on('library'), job: on('job'),
     playing: on('playing'), fix: on('fix'), toast: on('toast'), openFiles: on('open-files'),

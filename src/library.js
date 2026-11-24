@@ -33,6 +33,7 @@ const newId = (prefix) => `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
 // ------------------------------------------------------------------ art
 // Steam's public CDN has cover (600x900) and hero (wide) art for every Steam game.
 const steamArt = (appid) => ({
+  logo: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/logo.png`,
   cover: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900_2x.jpg`,
   hero: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_hero.jpg`,
   header: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/header.jpg`,
@@ -51,11 +52,13 @@ async function fetchTo(url, file) {
 // Cache art on disk so the library works offline and never re-downloads.
 async function cacheArt(item) {
   const urls = item.steamAppId ? steamArt(item.steamAppId) : item.artUrls;
+  if (item.steamAppId && !item.art) item.art = {};
   if (!urls) return item;
   const art = { ...(item.art || {}) };
-  for (const k of ['cover', 'hero']) {
+  for (const k of ['cover', 'hero', 'logo']) {
     if (art[k] && (await engine.exists(art[k]))) continue;
-    const file = path.join(ART, `${item.id}-${k}.jpg`);
+    if (!urls[k]) continue;
+    const file = path.join(ART, `${item.id}-${k}.${k === 'logo' ? 'png' : 'jpg'}`);
     try { art[k] = await fetchTo(urls[k], file); } catch {
       // Some games have no 600x900 cover; fall back to the wide header.
       if (k === 'cover' && urls.header) { try { art[k] = await fetchTo(urls.header, file); art.coverIsWide = true; } catch { /* none */ } }
@@ -104,13 +107,15 @@ async function scanSteam() {
     const prev = get(id);
     found.push(upsert({
       id, kind: 'game', source: 'steam', name: m.name || prev?.name || `Steam game ${m.appid}`, bottle: 'steam',
-      steamAppId: m.appid, installdir: m.installdir, installing: !installed,
+      steamAppId: m.appid, installdir: m.installdir, installing: !installed, notInstalled: false,
       exe: store.exe, args: [...store.args, '-silent', '-applaunch', m.appid],
       fix: prev?.fix || { graphics: 'dxmt' },
     }));
   }
   // Games uninstalled from inside Steam leave the library too.
-  for (const it of items.filter((i) => i.source === 'steam' && !found.find((f) => f.id === i.id))) remove(it.id);
+  for (const it of items.filter((i) => i.source === 'steam' && !found.find((f) => f.id === i.id))) {
+    if (it.imported) upsert({ id: it.id, notInstalled: true }); else remove(it.id);
+  }
   return found;
 }
 
@@ -171,12 +176,16 @@ function nameFor(file) {
   if (dir && !GENERIC_DIR.test(dir) && !/^[a-z]:$/i.test(dir)) return prettyName(dir);
   return prettyName(file);
 }
-// Turn "MyGame-Win64-Shipping.exe" into "My Game".
+// Turn "MyGame-Win64-Shipping.exe" into "My Game", "fnaf plus 5.5" into "FNAF Plus".
+const ACRONYMS = new Set(['fnaf', 'gta', 'cod', 'rpg', 'fps', 'pc', 'hd', 'vr', 'dx', 'ii', 'iii', 'iv', 'vi', 'vii', 'viii', 'ix', 'xi', 'xii', 'ue', 'gm', 'tf2', 'cs', 'csgo', 'dlc', 'nes', 'snes', 'gba', 'psx', 'uno']);
 function prettyName(file) {
   let n = path.basename(file).replace(/\.(exe|msi)$/i, '');
-  n = n.replace(/[-_.](win(32|64)?|x64|x86|shipping|setup|installer|install|launcher|final|v?\d+(\.\d+)+)/gi, ' ');
+  n = n.replace(/[-_. ](win(32|64)?|x64|x86|shipping|setup|installer|install|launcher|final|portable|v?\d+(\.\d+)+[a-z]?)(?=$|[-_. ])/gi, ' ');
   n = n.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_.]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return n ? n[0].toUpperCase() + n.slice(1) : 'Windows app';
+  if (!n) return 'Windows app';
+  // Keep names that already have their own capitals; tidy all-lowercase ones.
+  if (n === n.toLowerCase()) n = n.split(' ').map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))).join(' ');
+  return n[0].toUpperCase() + n.slice(1);
 }
 const looksLikeInstaller = (file) => /\.msi$/i.test(file) || /(setup|install|installer|_inst)\b/i.test(path.basename(file)) || /^setup/i.test(path.basename(file));
 

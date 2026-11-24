@@ -15,9 +15,12 @@ const fixer = require('./fixer');
 const macapp = require('./macapp');
 const { download } = require('./net');
 const exeicon = require('./exeicon');
+const importer = require('./importer');
+const { spawn } = require('child_process');
 const settings = () => require('./settings');
 engine.init(ROOT);
 library.init(ROOT);
+importer.init(ROOT);
 
 let win;
 const send = (ch, data) => { if (win && !win.isDestroyed()) win.webContents.send(ch, data); };
@@ -254,14 +257,14 @@ async function art(item) {
 
 // ---------------------------------------------------------------- playing
 const running = new Map(); // id -> { token, startedAt, seen, bottle }
-function wineProcs() {
-  return new Promise((resolve) => execFile('/bin/ps', ['-axo', 'command='], { maxBuffer: 8 * 1024 * 1024 }, (err, out) => {
-    // Only Windows processes (their command starts with a drive letter); never our own Mac-side wine launcher.
-    resolve(err ? [] : out.split('\n').filter((l) => /^[A-Z]:\\/.test(l)));
-  }));
+function allProcs() {
+  return new Promise((resolve) => execFile('/bin/ps', ['-axo', 'command='], { maxBuffer: 8 * 1024 * 1024 }, (err, out) => resolve(err ? [] : out.split('\n'))));
 }
+// Only Windows processes (their command starts with a drive letter); never our own Mac-side wine launcher.
+const wineProcs = async () => (await allProcs()).filter((l) => /^[A-Z]:\\/.test(l));
 // What to look for in the process list to know a game is still open.
 function tokenFor(item) {
+  if (item.mac) return (item.installdir || item.appPath || '').toLowerCase();
   if (item.source === 'steam' && item.installdir) return `steamapps\\common\\${item.installdir}\\`.toLowerCase();
   return item.exe.split('\\').pop().toLowerCase();
 }
@@ -287,6 +290,13 @@ async function play(id) {
   const item = library.get(id);
   if (!item) throw new Error('That game is no longer in DropExe.');
   if (running.has(id)) return { ok: true, already: true };
+  if (item.mac) return playMac(item);
+  if (item.source === 'steam' && item.notInstalled) {
+    if (!library.get('store-steam')) throw new Error('This is a Windows game. Get Steam in Stores first, sign in, then press Install.');
+    const steamItem = library.get('store-steam');
+    engine.runWine('steam', [steamItem.exe, ...steamItem.args, `steam://install/${item.steamAppId}`], steamItem.fix || {}, logger(id));
+    return { ok: true, installing: true };
+  }
   // Steam games need Steam's own files in place.
   await launch(item, item.fix || { graphics: 'dxmt' });
   return { ok: true };
@@ -295,6 +305,14 @@ ipcMain.handle('play', (e, id) => play(id).catch((err) => ({ ok: false, error: e
 ipcMain.handle('stop', async (e, id) => {
   const item = library.get(id);
   if (!item) return;
+  if (item.mac) {
+    // Ask the game to quit like Cmd-Q would.
+    const r = running.get(id);
+    if (item.appPath) spawn('/usr/bin/osascript', ['-e', `tell application ${JSON.stringify(item.appPath)} to quit`]);
+    else if (r?.token) spawn('/usr/bin/pkill', ['-f', r.token]);
+    finish(id);
+    return;
+  }
   await engine.killBottle(item.bottle);
   for (const [rid, r] of running) if (r.bottle === item.bottle) finish(rid);
 });
@@ -308,22 +326,36 @@ function finish(id) {
   pushLibrary();
 }
 
+// Mac games: Mac Steam opens its own games; other Mac games are plain apps.
+function playMac(item) {
+  const url = item.notInstalled ? `steam://install/${item.steamAppId}` : item.steamAppId ? `steam://rungameid/${item.steamAppId}` : null;
+  spawn('/usr/bin/open', url ? [url] : [item.appPath], { detached: true, stdio: 'ignore' }).unref();
+  if (!item.notInstalled) {
+    running.set(item.id, { token: tokenFor(item), startedAt: Date.now(), seen: false, mac: true });
+    library.upsert({ id: item.id, lastPlayed: Date.now() });
+    pushLibrary();
+  }
+  return { ok: true, installing: !!item.notInstalled };
+}
+
 // Every 2 seconds: which games are actually open? Feeds the "Playing" state, play time and the fixer.
 function startWatcher() {
   setInterval(async () => {
     if (!running.size) return;
-    const procs = (await wineProcs()).map((c) => c.toLowerCase());
+    const every = (await allProcs()).map((c) => c.toLowerCase());
+    const procs = every.filter((l) => /^[a-z]:\\/.test(l));
     // The program's own path is the first thing on its command line.
     const exeOf = (c) => { const i = c.indexOf('.exe'); return i < 0 ? c : c.slice(0, i + 4); };
     for (const [id, r] of running) {
-      const alive = procs.some((c) => (r.token.endsWith('.exe') ? exeOf(c).endsWith('\\' + r.token) : c.includes(r.token)));
+      const alive = r.mac ? (r.token && every.some((c) => c.startsWith(r.token)))
+        : procs.some((c) => (r.token.endsWith('.exe') ? exeOf(c).endsWith('\\' + r.token) : c.includes(r.token)));
       if (alive && !r.seen) { r.seen = true; r.seenAt = Date.now(); send('playing', { id }); }
-      const exited = r.proc.exitCode !== null;
+      const exited = r.proc ? r.proc.exitCode !== null : true;
       if (r.seen && !alive) { finish(id); continue; }
       // Never showed up: gone after 90 s, or the starter exited and nothing is left.
       // A starter that failed (non-zero exit) is done after a few seconds; one that exited cleanly may have handed off to a child.
       const age = Date.now() - r.startedAt;
-      if (!r.seen && (age > 90000 || (exited && age > (r.proc.exitCode !== 0 ? 4000 : 20000)))) finish(id);
+      if (!r.seen && (age > (r.mac ? 180000 : 90000) || (!r.mac && exited && age > (r.proc.exitCode !== 0 ? 4000 : 20000)))) finish(id);
     }
   }, 2000);
 }
@@ -381,10 +413,66 @@ function observe(id) {
 }
 const lastSeen = new Set();
 
+// ---------------------------------------------------------------- Find my games
+ipcMain.handle('scan-games', async () => {
+  const items = library.all().map((i) => ({ ...i, unixExe: i.exe && i.bottle ? engine.toUnix(i.bottle, i.exe) : null }));
+  const r = await importer.scanAll(items);
+  const have = new Set(library.all().map((i) => i.id));
+  const macId = (p) => 'mac-' + require('crypto').createHash('sha1').update(p).digest('hex').slice(0, 10);
+  return {
+    steam: r.steam.map((g) => ({ ...g, id: g.mac ? `msteam-${g.appid}` : `steam-${g.appid}`, have: have.has(g.mac ? `msteam-${g.appid}` : `steam-${g.appid}`) })),
+    exes: r.exes.filter((x) => !library.all().some((i) => i.bottle && i.exe && engine.toUnix(i.bottle, i.exe) === x.path)),
+    macGames: r.macGames.map((g) => ({ ...g, id: macId(g.path), have: have.has(macId(g.path)) })),
+  };
+});
+
+async function icnsToPng(icns, id) {
+  const out = path.join(ROOT, 'art', `${id}-icon.png`);
+  await new Promise((res) => execFile('/usr/bin/sips', ['-s', 'format', 'png', '-Z', '512', icns, '--out', out], () => res()));
+  return fs.existsSync(out) ? out : null;
+}
+
+ipcMain.handle('import-games', async (e, pick) => {
+  const added = [];
+  for (const g of pick.steam || []) {
+    const local = importer.localSteamArt(g.appid);
+    const art = { cover: local.cover, hero: local.hero, logo: local.logo };
+    if (!art.cover && local.header) { art.cover = local.header; art.coverIsWide = true; }
+    if (g.mac) {
+      library.upsert({ id: `msteam-${g.appid}`, kind: 'game', source: 'steam-mac', mac: true, name: g.name, steamAppId: g.appid, installdir: g.installdir, notInstalled: !g.installed, art, imported: true });
+      added.push(`msteam-${g.appid}`);
+    } else {
+      // A Windows-only game: it runs through DropExe's own Windows Steam.
+      const prev = library.get(`steam-${g.appid}`);
+      library.upsert({ id: `steam-${g.appid}`, kind: 'game', source: 'steam', name: g.name, bottle: 'steam', steamAppId: g.appid, exe: 'C:\\Program Files (x86)\\Steam\\steam.exe', args: ['-cef-disable-gpu-compositing', '-silent', '-applaunch', g.appid], notInstalled: prev ? prev.notInstalled : true, art: prev?.art?.cover ? prev.art : art, fix: prev?.fix || { graphics: 'dxmt' }, imported: true });
+      added.push(`steam-${g.appid}`);
+    }
+    const it = library.get(added[added.length - 1]);
+    if (!it.art?.cover || !it.art?.logo) library.cacheArt({ ...it, art: { ...it.art } }).then(pushLibrary).catch(() => {});
+  }
+  for (const x of pick.exes || []) { const r = await addProgram(x.path, 'apps', x.name); if (r.id) added.push(r.id); }
+  for (const g of pick.macGames || []) {
+    const icon = g.icon ? await icnsToPng(g.icon, g.id) : null;
+    library.upsert({ id: g.id, kind: 'game', source: 'mac', mac: true, name: g.name, appPath: g.path, art: { icon } });
+    art(library.get(g.id));
+    added.push(g.id);
+  }
+  pushLibrary();
+  return { added };
+});
+
 // ---------------------------------------------------------------- library actions
 ipcMain.handle('refresh', async () => {
   if (DEMO) return view();
   const found = [...(await library.scanSteam()), ...(await library.scanEpic())];
+  if (library.all().some((i) => i.source === 'steam-mac')) {
+    try {
+      for (const g of await importer.scanMacSteam()) {
+        const it = library.get(`msteam-${g.appid}`);
+        if (it) library.upsert({ id: it.id, notInstalled: !g.installed, installdir: g.installdir || it.installdir });
+      }
+    } catch { /* Steam folder moved */ }
+  }
   for (const it of found) if (!it.art?.cover) art(it);
   for (const it of library.all()) if (it.source !== 'steam' && !it.art?.icon) iconFor(it).catch(() => {});
   return view();

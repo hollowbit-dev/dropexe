@@ -68,7 +68,9 @@ function setBackdrop(url, mode = '') {
 
 // ---------------------------------------------------------------- library
 function ordered() {
-  const games = S.items.filter((i) => i.kind !== 'store').sort((a, b) => (b.lastPlayed || b.addedAt || 0) - (a.lastPlayed || a.addedAt || 0));
+  // Played most recently first, then installed games, then the rest by name.
+  const games = S.items.filter((i) => i.kind !== 'store').sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0)
+    || (a.notInstalled ? 1 : 0) - (b.notInstalled ? 1 : 0) || a.name.localeCompare(b.name));
   const stores = S.items.filter((i) => i.kind === 'store');
   return [...games, ...stores];
 }
@@ -98,6 +100,7 @@ function coverEl(it) {
   }
   if (it.running || S.playing.has(it.id)) { const t = document.createElement('span'); t.className = 'tag live'; t.textContent = it.kind === 'store' ? 'Open' : 'Playing'; b.append(t); }
   else if (it.installing) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Installing in Steam'; b.append(t); }
+  else if (it.notInstalled) { b.classList.add('dim'); const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Not installed'; b.append(t); }
   b.addEventListener('click', () => select(it.id, true));
   b.addEventListener('dblclick', () => playSel());
   return b;
@@ -141,19 +144,28 @@ function select(id, scroll) {
   $$('.cover').forEach((c) => { const on = c.dataset.id === id; c.classList.toggle('sel', on); c.setAttribute('aria-selected', on); });
   if (scroll) scrollShelfTo($(`.cover[data-id="${CSS.escape(id)}"]`));
   const title = $('#hero-title');
+  const logo = $('#hero-logo');
+  const logoUrl = it.art?.logo ? fileUrl(it.art.logo) : '';
   if (changed || title.textContent !== it.name) {
     title.textContent = it.name;
-    title.classList.remove('swap'); void title.offsetWidth; title.classList.add('swap');
+    // Steam games show their real logo; the title stays for screen readers.
+    title.classList.toggle('sr', !!logoUrl);
+    logo.hidden = !logoUrl;
+    if (logoUrl) { logo.src = logoUrl; logo.onerror = () => { logo.hidden = true; title.classList.remove('sr'); }; }
+    const el = logoUrl ? logo : title;
+    el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap');
   }
-  const kind = it.kind === 'store' ? 'Game store' : it.source === 'steam' ? 'Steam' : it.source === 'epic' ? 'Epic Games' : 'Windows program';
-  const kIcon = it.kind === 'store' ? iconOf(it) : it.source === 'steam' ? storeLogo('steam') : null;
+  const kind = it.kind === 'store' ? 'Game store' : it.source === 'steam-mac' ? 'Steam, Mac version' : it.source === 'steam' ? 'Steam, Windows version'
+    : it.source === 'epic' ? 'Epic Games' : it.source === 'mac' ? 'Mac game' : 'Windows program';
+  const kIcon = it.kind === 'store' ? iconOf(it) : /^steam/.test(it.source || '') ? storeLogo('steam') : null;
   $('#hero-kind-text').textContent = kind;
   $('#hero-kind-icon').hidden = !kIcon;
   if (kIcon) $('#hero-kind-icon').src = fileUrl(kIcon);
   $('#hero-kind').classList.toggle('has-icon', !!kIcon);
   const meta = [];
   if (it.playMs > 60000) meta.push(`Played ${fmtTime(it.playMs)}`);
-  if (it.fix?.graphics) meta.push(GRAPHICS[it.fix.graphics]);
+  if (it.notInstalled) meta.push('Not installed');
+  if (it.fix?.graphics && !it.mac) meta.push(GRAPHICS[it.fix.graphics]);
   if (it.fixedWith) meta.push('Fixed by Make it run');
   if (it.macApp) meta.push('In Launchpad');
   $('#hero-meta').replaceChildren(...meta.map((m) => { const li = document.createElement('li'); li.textContent = m; return li; }));
@@ -165,7 +177,9 @@ function select(id, scroll) {
   updatePlay();
   const mac = $('#mac-btn');
   $('span', mac).textContent = it.macApp ? 'Show in Finder' : 'Add to Launchpad';
-  $('#fix-btn').hidden = it.kind === 'store' && it.storeId === 'steam' && false;
+  // Mac games run natively: nothing to fix, and Steam already puts them in Launchpad.
+  $('#fix-btn').hidden = !!it.mac || !!it.notInstalled;
+  mac.hidden = !!it.mac;
 }
 
 function updatePlay() {
@@ -173,8 +187,9 @@ function updatePlay() {
   if (!it) return;
   const live = it.running || S.playing.has(it.id);
   const b = $('#play-btn');
-  $('span', b).textContent = live ? 'Stop' : it.kind === 'store' ? `Open ${it.name}` : 'Play';
-  $('svg', b).innerHTML = live ? '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/>' : '<path d="M4 2.6v10.8a.8.8 0 0 0 1.2.7l8.6-5.4a.8.8 0 0 0 0-1.4L5.2 1.9A.8.8 0 0 0 4 2.6Z" fill="currentColor"/>';
+  $('span', b).textContent = live ? 'Stop' : it.notInstalled ? 'Install' : it.kind === 'store' ? `Open ${it.name}` : 'Play';
+  $('svg', b).innerHTML = live ? '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/>'
+    : it.notInstalled ? '<path d="M8 2v8m0 0L4.8 6.8M8 10l3.2-3.2M3 13.5h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' : '<path d="M4 2.6v10.8a.8.8 0 0 0 1.2.7l8.6-5.4a.8.8 0 0 0 0-1.4L5.2 1.9A.8.8 0 0 0 4 2.6Z" fill="currentColor"/>';
   b.classList.toggle('playing', live);
   b.disabled = !!it.installing;
 }
@@ -188,6 +203,7 @@ async function playSel() {
   const r = await dx.play(it.id);
   b.disabled = false;
   if (r && r.ok === false) { toast(r.error, 'error'); updatePlay(); return; }
+  if (r?.installing) { toast(it.mac ? `Steam is installing ${it.name}. It'll be ready to play here when it's done.` : `Windows Steam is installing ${it.name}. It'll show up ready here when it's done.`); updatePlay(); return; }
   setTimeout(updatePlay, 400);
 }
 
@@ -304,6 +320,52 @@ function choose(list) {
     $('#pick-cancel').onclick = () => { $('#pick-sheet').hidden = true; resolve(); };
   });
 }
+
+// ---------------------------------------------------------------- Find my games
+async function findGames() {
+  const sheet = $('#import-sheet'), list = $('#import-list'), ok = $('#import-ok');
+  sheet.hidden = false; ok.disabled = true; list.replaceChildren();
+  $('#import-text').textContent = 'Looking through Steam and your Downloads, Desktop and Documents…';
+  const r = await dx.scanGames();
+  const groups = [
+    ['steam', 'From Steam', r.steam.filter((g) => !g.have), (g) => `${g.mac ? 'Mac version' : 'Windows version'}${g.installed ? '' : ', not installed'}`, (g) => g.art?.cover || g.art?.header],
+    ['exes', 'Windows games in your folders', r.exes, (g) => g.loose || g.installer ? 'Looks like an installer or a lone download, so not ticked' : g.path.replace(/^\/Users\/[^/]+/, '~'), () => null],
+    ['macGames', 'Mac games', r.macGames.filter((g) => !g.have), (g) => (g.tool ? 'Launcher or emulator, so not ticked' : 'Mac app'), () => null],
+  ];
+  let total = 0;
+  for (const [key, label, items, sub, art] of groups) {
+    if (!items.length) continue;
+    const h = document.createElement('h3'); h.className = 'import-h'; h.textContent = `${label} (${items.length})`;
+    const grid = document.createElement('div'); grid.className = 'import-grid';
+    items.sort((a, b) => (b.installed ? 1 : 0) - (a.installed ? 1 : 0) || a.name.localeCompare(b.name));
+    for (const g of items) {
+      const l = document.createElement('label'); l.className = 'import-item';
+      const pic = art(g);
+      l.innerHTML = `<input type="checkbox"><span class="import-pic"></span><span class="import-txt"><b></b><small></small></span>`;
+      if (pic) { const im = new Image(); im.src = fileUrl(pic); im.alt = ''; $('.import-pic', l).append(im); } else $('.import-pic', l).textContent = g.name[0];
+      $('b', l).textContent = g.name; $('small', l).textContent = sub(g);
+      const box = $('input', l); box.checked = !(g.loose || g.installer || g.tool); box.dataset.key = key; box._g = g;
+      grid.append(l); total++;
+    }
+    list.append(h, grid);
+  }
+  const count = () => { const n = $$('input:checked', list).length; ok.textContent = n ? `Add ${n} game${n === 1 ? '' : 's'}` : 'Add games'; ok.disabled = !n; };
+  list.onchange = count; count();
+  $('#import-text').textContent = total ? 'Untick anything you don\'t want. Windows-only Steam games play through DropExe\'s own Steam.' : 'No new games found. Drag a game\'s .exe onto the window to add it.';
+  ok.onclick = async () => {
+    const pick = { steam: [], exes: [], macGames: [] };
+    for (const b of $$('input:checked', list)) pick[b.dataset.key].push(b._g);
+    ok.disabled = true; ok.textContent = 'Adding…';
+    const res = await dx.importGames(pick);
+    sheet.hidden = true;
+    S.sel = res.added[0] || S.sel;
+    await reload(res.added[0]);
+    toast(`Added ${res.added.length} game${res.added.length === 1 ? '' : 's'}.`);
+  };
+}
+$('#import-cancel').onclick = () => { $('#import-sheet').hidden = true; };
+$('#find-btn').onclick = findGames;
+$('#empty-find').onclick = findGames;
 
 // ---------------------------------------------------------------- Make it run
 function openFix(it) {
@@ -436,7 +498,6 @@ async function reload(newId) {
 // ---------------------------------------------------------------- wiring
 $$('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
 $('[data-goto="stores"]').onclick = () => switchTab('stores');
-$('[data-store="steam"]').onclick = () => { switchTab('stores'); addStore('steam'); };
 $('#play-btn').onclick = playSel;
 $('#fix-btn').onclick = () => { const it = S.items.find((i) => i.id === S.sel); if (it) openFix(it); };
 $('#mac-btn').onclick = async () => {
@@ -451,7 +512,7 @@ $('#add-btn').onclick = async () => { const f = await dx.chooseFiles(); if (f.le
 $('#by').onclick = () => window.open('https://hollowbit.dev/');
 
 document.addEventListener('keydown', (e) => {
-  if (e.target.isContentEditable || !$('#fix-sheet').hidden || !$('#pick-sheet').hidden) return;
+  if (e.target.isContentEditable || !$('#fix-sheet').hidden || !$('#pick-sheet').hidden || !$('#import-sheet').hidden) return;
   if (e.key === 'Escape') { $('#menu').hidden = true; $('#log-sheet').hidden = true; }
   if (S.tab !== 'library' || !$('#menu').hidden) return;
   const list = ordered(); const i = list.findIndex((x) => x.id === S.sel);
