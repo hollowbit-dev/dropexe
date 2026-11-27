@@ -1,7 +1,7 @@
 {
   "name": "dropexe",
   "productName": "DropExe",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Run Windows games and apps on your Mac. Free, with one-click Steam and a Make it run button.",
   "main": "src/main.js",
   "private": true,
