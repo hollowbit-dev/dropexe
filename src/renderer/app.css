@@ -327,3 +327,7 @@ body.dragging .cover.sel { transform: none; box-shadow: 0 12px 30px rgba(0,0,0,.
 .pb { min-width: 44px; height: 30px; padding: 0 10px; display: inline-grid; place-items: center; border-radius: 8px; font-size: 12px; font-weight: 700; background: rgba(255,255,255,.08); color: var(--muted); transition: background .08s, color .08s, transform .15s var(--spring); }
 .pb.on { background: #5be49b; color: #062814; transform: scale(1.08); }
 .menu button[hidden], .menu hr[hidden] { display: none; }
+.sheet-foot .grow { flex: 1; }
+.steps li.skip { opacity: .45; }
+.steps li.skip::before { content: "–"; color: var(--muted); }
+#gptk-err { color: #ffa3a3; }

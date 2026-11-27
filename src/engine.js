@@ -22,6 +22,14 @@ const WINE10 = {
   engine: { url: 'https://github.com/Sikarugir-App/Engines/releases/download/v1.0/WS12WineSikarugir10.0_8.tar.xz', size: 159 },
   frameworks: { url: 'https://github.com/Sikarugir-App/Template/releases/download/v1.0/Template-1.0.11.tar.xz', size: 81 },
 };
+// Apple's Game Porting Toolkit (D3DMetal: DirectX 11 and 12 straight to Metal), as Gcenx's ready-made Wine build.
+// Apple's licence allows free, non-commercial sharing, so it's fetched only after the user accepts it in DropExe.
+const GPTK = {
+  version: '3.0-3',
+  url: 'https://github.com/Gcenx/game-porting-toolkit/releases/download/Game-Porting-Toolkit-3.0-3/game-porting-toolkit-3.0-3.tar.xz',
+  size: 228,
+  licence: 'https://github.com/user-attachments/files/23971305/License.pdf',
+};
 const ENGINE_VERSION = `wine-${SOURCES.wine.version}+dxmt-${SOURCES.dxmt.version}+dxvk-${SOURCES.dxvk.version}`;
 
 let ROOT = null;
@@ -33,6 +41,7 @@ const dirs = () => ({
   dxvk: path.join(ROOT, 'engine', 'dxvk'),
   wine10: path.join(ROOT, 'engine', 'wine10'),
   frameworks: path.join(ROOT, 'engine', 'frameworks'),
+  gptk: path.join(ROOT, 'engine', 'gptk'),
   bottles: path.join(ROOT, 'bottles'),
   downloads: path.join(ROOT, 'downloads'),
   logs: path.join(ROOT, 'logs'),
@@ -137,6 +146,31 @@ async function ensureWine10(onProgress = () => {}) {
   onProgress(1);
 }
 
+const gptkStamp = () => path.join(dirs().engine, 'gptk.txt');
+const hasGptk = async () => (await exists(gptkStamp())) && (await fsp.readFile(gptkStamp(), 'utf8')).trim() === GPTK.version;
+const hasGptkSync = () => { try { return fs.readFileSync(gptkStamp(), 'utf8').trim() === GPTK.version; } catch { return false; } };
+// Apple Silicon only: D3DMetal doesn't run on Intel Macs.
+const gptkSupported = () => process.arch === 'arm64' || process.env.DROPEXE_FORCE_GPTK === '1';
+async function ensureGptk(onProgress = () => {}) {
+  if (await hasGptk()) return;
+  if (!gptkSupported()) throw new Error("Apple's DirectX 12 engine needs a Mac with Apple silicon.");
+  const d = dirs();
+  const file = path.join(d.downloads, path.basename(GPTK.url));
+  if (!(await exists(file))) await download(GPTK.url, file, (f) => onProgress(f * 0.9));
+  const tmp = path.join(d.engine, 'tmp-gptk');
+  await fsp.rm(tmp, { recursive: true, force: true });
+  await fsp.mkdir(tmp, { recursive: true });
+  await run('/usr/bin/tar', ['xf', file, '-C', tmp]);
+  const app = (await fsp.readdir(tmp)).find((n) => n.endsWith('.app'));
+  if (!app) throw new Error("Apple's engine download looks broken. Try again.");
+  await fsp.rm(d.gptk, { recursive: true, force: true });
+  await fsp.rename(path.join(tmp, app, 'Contents', 'Resources', 'wine'), d.gptk);
+  await fsp.rm(tmp, { recursive: true, force: true });
+  await fsp.rm(file, { force: true });
+  await fsp.writeFile(gptkStamp(), GPTK.version);
+  onProgress(1);
+}
+
 // ------------------------------------------------------------------ bottles
 // A bottle is one Windows "C: drive". Each store gets its own, so a fix for one never breaks another.
 const bottlePath = (id) => path.join(dirs().bottles, id);
@@ -145,7 +179,7 @@ const bottlePath = (id) => path.join(dirs().bottles, id);
 const engineOf = (bottleId) => { try { return fs.readFileSync(path.join(bottlePath(bottleId), '.dropexe-engine'), 'utf8').trim(); } catch { return 'wine11'; } };
 
 // Graphics modes the "Make it run" button can try, best first.
-const GRAPHICS = ['dxmt', 'dxvk', 'wined3d'];
+const GRAPHICS = ['dxmt', 'dxvk', 'wined3d', 'd3dmetal'];
 
 function envFor(bottleId, fix = {}) {
   const g = fix.graphics || 'dxmt';
@@ -169,12 +203,22 @@ function envFor(bottleId, fix = {}) {
     env.WINEESYNC = '0'; env.WINEMSYNC = '0';
     if (g !== 'dxvk') env.WINEDLLOVERRIDES = env.WINEDLLOVERRIDES.replace('d3d11,d3d10core,dxgi=b', '');
   }
+  if (usesGptk(bottleId, fix)) {
+    // Apple's engine: its own d3d11/d3d12/dxgi are D3DMetal. Nothing of ours may override them.
+    env.WINEDLLOVERRIDES = fix.overrides || '';
+    env.WINEESYNC = fix.noSync ? '0' : '1'; env.WINEMSYNC = fix.noSync ? '0' : '1';
+    env.D3DM_SUPPORT_DXR = '1'; // ray tracing where the Mac supports it (M3 and later)
+    env.ROSETTA_ADVERTISE_AVX = '1'; // newer games refuse to start without AVX
+    return env;
+  }
   if (g === 'dxmt') env.DXMT_LOG_LEVEL = 'none';
   if (g === 'dxvk') { env.DXVK_ASYNC = '1'; env.DXVK_LOG_LEVEL = 'none'; }
   return env;
 }
-const engineDir = (bottleId, fix = {}) => (engineOf(bottleId) === 'wine10' ? dirs().wine10 : (fix.graphics || 'dxmt') === 'dxmt' ? dirs().wineDxmt : dirs().wine);
-const wineBin = (bottleId, fix) => path.join(engineDir(bottleId, fix), 'bin', 'wine');
+// A bottle made on Apple's engine ('gptk') always runs on it; elsewhere D3DMetal is picked per game.
+const usesGptk = (bottleId, fix = {}) => engineOf(bottleId) === 'gptk' || (engineOf(bottleId) === 'wine11' && fix.graphics === 'd3dmetal');
+const engineDir = (bottleId, fix = {}) => (usesGptk(bottleId, fix) ? dirs().gptk : engineOf(bottleId) === 'wine10' ? dirs().wine10 : (fix.graphics || 'dxmt') === 'dxmt' ? dirs().wineDxmt : dirs().wine);
+const wineBin = (bottleId, fix) => { const b = path.join(engineDir(bottleId, fix), 'bin'); return fs.existsSync(path.join(b, 'wine')) ? path.join(b, 'wine') : path.join(b, 'wine64'); };
 const wineserverBin = (bottleId, fix) => path.join(engineDir(bottleId, fix), 'bin', 'wineserver');
 
 async function prepareGraphics(bottleId, fix) {
@@ -205,9 +249,42 @@ async function ensureBottle(id, onLog = () => {}, engine = 'wine11') {
   return p;
 }
 
+// The first time a drive runs on Apple's engine, Wine converts it (about a minute). Do that before the game
+// starts, so "Make it run" never mistakes it for a game that didn't open.
+async function readyForGptk(bottleId, onLog = () => {}, onProgress = () => {}) {
+  const mark = path.join(bottlePath(bottleId), '.dropexe-gptk');
+  if (await exists(mark)) return;
+  onProgress(0.1);
+  await switchEngine(bottleId, { graphics: 'd3dmetal' });
+  await runWine(bottleId, ['wineboot', '-u'], { graphics: 'd3dmetal' }, onLog).done;
+  await fsp.writeFile(mark, GPTK.version);
+  onProgress(1);
+}
+
+// Two Wine engines can't share a drive at the same time: their background servers clash ("version mismatch").
+// So when a drive moves to another engine, the old engine's server is shut down first and waited for.
+const liveEngine = new Map(); // bottle -> engine folder whose wineserver may be running
+async function switchEngine(bottleId, fix = {}) {
+  const dir = engineDir(bottleId, fix), prev = liveEngine.get(bottleId);
+  if (prev === dir) return;
+  // Unknown (e.g. DropExe just restarted): stop every other engine's server on this drive, to be sure.
+  const others = prev ? [prev] : [dirs().wine, dirs().wineDxmt, dirs().wine10, dirs().gptk].filter((d) => d !== dir);
+  const env = { ...process.env, WINEPREFIX: bottlePath(bottleId) };
+  for (const d of others) {
+    const server = path.join(d, 'bin', 'wineserver');
+    if (!fs.existsSync(server)) continue;
+    await new Promise((r) => { const p = spawn(server, ['-k'], { env }); p.on('exit', r); p.on('error', r); });
+    await new Promise((r) => { const p = spawn(server, ['-w'], { env }); p.on('exit', r); p.on('error', r); setTimeout(r, 15000); });
+  }
+  liveEngine.set(bottleId, dir);
+}
+
 // Start a Windows program. Returns { proc, done: Promise<{code, ms}> }.
 function runWine(bottleId, args, fix = {}, onLog = () => {}, opts = {}) {
   const started = Date.now();
+  const dir = engineDir(bottleId, fix);
+  if (liveEngine.has(bottleId) && liveEngine.get(bottleId) !== dir) onLog(`[DropExe] warning: ${path.basename(dir)} started while ${path.basename(liveEngine.get(bottleId))} may still run on this drive\n`);
+  liveEngine.set(bottleId, dir);
   const proc = spawn(wineBin(bottleId, fix), args, { env: envFor(bottleId, fix), cwd: opts.cwd || bottlePath(bottleId), detached: !!opts.detached });
   const log = (b) => onLog(b.toString());
   proc.stdout.on('data', log);
@@ -221,13 +298,16 @@ function runWine(bottleId, args, fix = {}, onLog = () => {}, opts = {}) {
 
 // Stop everything running in a bottle.
 function killBottle(bottleId) {
+  liveEngine.delete(bottleId);
   return new Promise((resolve) => {
     const env = envFor(bottleId);
     let n = 0;
-    for (const bin of [wineserverBin(bottleId, { graphics: 'dxmt' }), wineserverBin(bottleId, { graphics: 'wined3d' })]) {
+    const bins = [wineserverBin(bottleId, { graphics: 'dxmt' }), wineserverBin(bottleId, { graphics: 'wined3d' })];
+    if (hasGptkSync()) bins.push(path.join(dirs().gptk, 'bin', 'wineserver'));
+    for (const bin of bins) {
       const p = spawn(bin, ['-k'], { env });
-      p.on('exit', () => { if (++n === 2) resolve(); });
-      p.on('error', () => { if (++n === 2) resolve(); });
+      p.on('exit', () => { if (++n === bins.length) resolve(); });
+      p.on('error', () => { if (++n === bins.length) resolve(); });
     }
   });
 }
@@ -245,4 +325,4 @@ function toWin(bottleId, unixPath) {
   return 'Z:' + unixPath.split(path.sep).join('\\');
 }
 
-module.exports = { init, dirs, status, install, ensureWine10, hasWine10, engineOf, ensureBottle, runWine, killBottle, prepareGraphics, bottlePath, toUnix, toWin, GRAPHICS, exists, hasRosetta, ENGINE_VERSION };
+module.exports = { init, dirs, status, install, ensureWine10, hasWine10, ensureGptk, readyForGptk, switchEngine, hasGptk, hasGptkSync, gptkSupported, GPTK, engineOf, ensureBottle, runWine, killBottle, prepareGraphics, bottlePath, toUnix, toWin, GRAPHICS, exists, hasRosetta, ENGINE_VERSION };

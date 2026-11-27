@@ -124,7 +124,7 @@ function applyTint(it) {
 }
 
 const fmtTime = (ms) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${(m / 60).toFixed(m < 600 ? 1 : 0)} h`; };
-const GRAPHICS = { dxmt: 'Metal graphics', dxvk: 'Vulkan graphics', wined3d: 'Classic graphics' };
+const GRAPHICS = { dxmt: 'Metal graphics', dxvk: 'Vulkan graphics', wined3d: 'Classic graphics', d3dmetal: 'Apple D3DMetal' };
 
 // Scroll only the shelf (scrollIntoView would also slide the whole page sideways).
 function scrollShelfTo(c) {
@@ -441,7 +441,7 @@ function openFix(it) {
   $('#fix-sheet').hidden = false;
   dx.fix(it.id);
 }
-const FIX_TEXT = { trying: 'Trying', prep: 'Installing', crashed: 'Closed by itself', nothing: "Didn't open", ask: 'Stayed open', fixed: 'Works', cancelled: '' };
+const FIX_TEXT = { trying: 'Trying', prep: 'Installing', crashed: 'Closed by itself', nothing: "Didn't open", ask: 'Stayed open', fixed: 'Works', cancelled: '', skipped: 'Not turned on' };
 function onFix(f) {
   if (f.id !== S.fixing) return;
   if (f.state === 'failed' || f.state === 'cancelled') {
@@ -454,7 +454,7 @@ function onFix(f) {
   }
   const li = $(`#fix-steps li[data-step="${f.step}"]`);
   if (!li) return;
-  li.className = { trying: 'trying', prep: 'trying', crashed: 'bad', nothing: 'bad', ask: 'trying', fixed: 'good' }[f.state] || '';
+  li.className = { trying: 'trying', prep: 'trying', crashed: 'bad', nothing: 'bad', ask: 'trying', fixed: 'good', skipped: 'skip' }[f.state] || '';
   $('.st', li).textContent = FIX_TEXT[f.state] || '';
   $('#fix-ask').hidden = f.state !== 'ask';
   if (f.state === 'fixed') {
@@ -467,6 +467,29 @@ $('#fix-yes').onclick = () => { $('#fix-ask').hidden = true; dx.fixAnswer(true);
 $('#fix-no').onclick = () => { $('#fix-ask').hidden = true; dx.fixAnswer(false); };
 $('#fix-close').onclick = () => { if ($('#fix-close').textContent === 'Stop trying') dx.fixCancel(); $('#fix-sheet').hidden = true; S.fixing = null; };
 
+// ---------------------------------------------------------------- Apple's DirectX 12 engine
+let gptkFor = null;
+function openGptk(it) {
+  gptkFor = it.id;
+  $('#gptk-size').textContent = S.gptk?.sizeMB || 228;
+  $('#gptk-err').hidden = true;
+  $('#gptk-ok').disabled = false; $('#gptk-ok').textContent = 'Accept and download';
+  $('#gptk-sheet').hidden = false;
+  $('#gptk-ok').focus();
+}
+$('#gptk-read').onclick = () => dx.gptkLicence();
+$('#gptk-cancel').onclick = () => { $('#gptk-sheet').hidden = true; gptkFor = null; };
+$('#gptk-ok').onclick = async () => {
+  $('#gptk-ok').disabled = true; $('#gptk-ok').textContent = 'Downloading…';
+  const r = await dx.gptkAccept();
+  S.gptk = (await dx.state()).gptk;
+  if (!r.ok) { $('#gptk-err').textContent = r.error; $('#gptk-err').hidden = false; $('#gptk-ok').disabled = false; $('#gptk-ok').textContent = 'Try again'; return; }
+  $('#gptk-sheet').hidden = true;
+  const it = S.items.find((i) => i.id === gptkFor);
+  gptkFor = null;
+  if (it) { await dx.setGraphics(it.id, 'd3dmetal'); toast(`${it.name} now uses Apple D3DMetal.`); }
+};
+
 // ---------------------------------------------------------------- more menu
 function openMenu(anchor) {
   const it = S.items.find((i) => i.id === S.sel);
@@ -474,6 +497,8 @@ function openMenu(anchor) {
   const m = $('#menu');
   const g = it.fix?.graphics || 'dxmt';
   $$('[data-act^="graphics-"]', m).forEach((b) => { b.classList.toggle('on', b.dataset.act === `graphics-${g}`); b.hidden = !!it.mac; });
+  // Apple's engine: Apple silicon only, and not inside Steam's drive (Steam runs on a different engine).
+  $('[data-act="graphics-d3dmetal"]', m).hidden = !!it.mac || !S.gptk?.supported || !it.canGptk;
   $('[data-act="retina"]', m).classList.toggle('on', !!it.fix?.retina);
   $('[data-act="retina"]', m).hidden = !!it.mac;
   $('[data-act="drive"]', m).hidden = !!it.mac;
@@ -493,7 +518,8 @@ $('#menu').addEventListener('click', async (e) => {
   const it = S.items.find((i) => i.id === S.sel);
   if (!it) return;
   if (act === 'rename') renameInline(it);
-  else if (act.startsWith('graphics-')) { await dx.setGraphics(it.id, act.slice(9)); toast(`${it.name} now uses ${GRAPHICS[act.slice(9)].toLowerCase()}.`); }
+  else if (act === 'graphics-d3dmetal' && !(S.gptk?.accepted && S.gptk?.installed)) openGptk(it);
+  else if (act.startsWith('graphics-')) { const g = act.slice(9); await dx.setGraphics(it.id, g); toast(`${it.name} now uses ${g === 'd3dmetal' ? GRAPHICS[g] : GRAPHICS[g].toLowerCase()}.`); }
   else if (act === 'drive') dx.openDrive(it.id);
   else if (act === 'log') { $('#log-text').textContent = (await dx.log(it.id)) || 'Nothing yet. Press Play first.'; $('#log-sheet').hidden = false; }
   else if (act === 'retina') { const on = !it.fix?.retina; await dx.setRetina(it.id, on); toast(on ? `${it.name} will draw at full Retina sharpness next time you play.` : `${it.name} is back to normal resolution.`); }
@@ -586,7 +612,7 @@ document.addEventListener('keydown', (e) => {
 
 (async function start() {
   const st = await dx.state();
-  Object.assign(S, { items: st.items, stores: st.stores, steps: st.steps, engine: st.engine });
+  Object.assign(S, { items: st.items, stores: st.stores, steps: st.steps, engine: st.engine, gptk: st.gptk });
   $('#ver').textContent = st.version;
   if (!st.engine.installed) setup();
   if (st.engine.installed) S.items = await dx.refresh();

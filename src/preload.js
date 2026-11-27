@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('dx', {
   showMacApp: call('show-mac-app'),
   openDrive: call('open-drive'),
   setGraphics: call('set-graphics'),
+  gptkAccept: call('gptk-accept'),
+  gptkLicence: call('gptk-licence'),
   log: call('log'),
   scanGames: call('scan-games'),
   importGames: call('import-games'),

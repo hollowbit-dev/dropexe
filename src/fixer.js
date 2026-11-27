@@ -7,6 +7,7 @@ const engine = require('./engine');
 
 const STEPS = [
   { id: 'dxmt', label: 'Metal graphics', detail: 'DirectX 10 and 11 drawn straight with Metal. Fastest on Apple chips.', fix: { graphics: 'dxmt' } },
+  { id: 'd3dmetal', label: "Apple's DirectX 12 engine", detail: "Apple's D3DMetal. Runs DirectX 12 games, and many DirectX 11 ones faster.", fix: { graphics: 'd3dmetal' }, needs: 'gptk' },
   { id: 'dxvk', label: 'Vulkan graphics', detail: 'A second DirectX translator. Some games like this one better.', fix: { graphics: 'dxvk' } },
   { id: 'wined3d', label: 'Classic graphics', detail: 'Older OpenGL path. Slower, but works with many old games.', fix: { graphics: 'wined3d' } },
   { id: 'vcredist', label: 'Add Microsoft runtimes', detail: 'Installs the Visual C++ files lots of games need, then tries Metal again.', fix: { graphics: 'dxmt' }, prep: 'vcredist' },

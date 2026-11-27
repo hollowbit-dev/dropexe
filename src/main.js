@@ -83,19 +83,33 @@ function view() {
     ...i,
     running: running.has(i.id),
     macApp: macapp.has(i),
+    canGptk: !i.mac && (stores.find((x) => x.id === i.bottle)?.engine || 'wine11') === 'wine11',
   }));
 }
 ipcMain.handle('state', async () => ({
   engine: DEMO ? { installed: true, version: engine.ENGINE_VERSION, rosetta: true } : await engine.status(),
   items: view(),
   stores: stores.map(({ id, name, color, works, broken }) => ({ id, name, color, works, broken, added: DEMO ? ['steam', 'epic'].includes(id) : !!library.get(`store-${id}`) && (stores.find((x) => x.id === id).engine || 'wine11') === engine.engineOf(id) })),
-  steps: fixer.STEPS.map(({ id, label, detail }) => ({ id, label, detail })),
+  steps: fixer.STEPS.map(({ id, label, detail, needs }) => ({ id, label, detail, needs })),
+  gptk: { supported: engine.gptkSupported(), accepted: !!settings().get().gptkAccepted, installed: DEMO || engine.hasGptkSync(), sizeMB: engine.GPTK.size, licence: engine.GPTK.licence },
   version: app.getVersion(),
   settings: settings().get(),
   demo: DEMO,
 }));
 const pushLibrary = () => send('library', view());
 ipcMain.handle('set-settings', (e, patch) => settings().set({ autoUpdate: patch.autoUpdate !== false }));
+// Apple's DirectX 12 engine: only after the user accepts Apple's licence (shown in the app, linked in full).
+const gptkReady = () => !!settings().get().gptkAccepted && engine.hasGptkSync();
+ipcMain.handle('gptk-licence', () => shell.openExternal(engine.GPTK.licence));
+ipcMain.handle('gptk-accept', async () => {
+  settings().set({ gptkAccepted: true });
+  try {
+    await engine.ensureGptk((f) => job('gptk', "Getting Apple's DirectX 12 engine", f));
+    jobDone('gptk');
+    pushLibrary();
+    return { ok: true };
+  } catch (err) { jobDone('gptk'); return { ok: false, error: err.message }; }
+});
 ipcMain.handle('check-updates', () => updates.check({ manual: true }));
 ipcMain.handle('open-update', (e, url) => /^https:\/\/github\.com\/hollowbit-dev\/dropexe\//.test(url) && shell.openExternal(url));
 
@@ -262,7 +276,9 @@ function allProcs() {
   return new Promise((resolve) => execFile('/bin/ps', ['-axo', 'command='], { maxBuffer: 8 * 1024 * 1024 }, (err, out) => resolve(err ? [] : out.split('\n'))));
 }
 // Only Windows processes (their command starts with a drive letter); never our own Mac-side wine launcher.
-const wineProcs = async () => (await allProcs()).filter((l) => /^[A-Z]:\\/.test(l));
+// Apple's engine shows them as ".../wine64-preloader C:\..." instead, so that prefix is cut off first.
+const winCmd = (l) => l.replace(/^\/.*\/wine(64)?-preloader /, '');
+const wineProcs = async () => (await allProcs()).map(winCmd).filter((l) => /^[A-Z]:\\/.test(l));
 // What to look for in the process list to know a game is still open.
 function tokenFor(item) {
   if (item.mac) return (item.installdir || item.appPath || '').toLowerCase();
@@ -277,7 +293,13 @@ async function launch(item, fix) {
     // An older Steam drive made on Wine 11: its window is black. Rebuild it on Wine 10.
     throw new Error(`${stores.find((x) => x.id === item.bottle)?.name || 'This store'} needs a quick reinstall to fix its window. Open Stores and press Get again.`);
   }
+  if (fix.graphics === 'd3dmetal') {
+    if (want !== 'wine11') throw new Error(`Apple's DirectX 12 engine can't run games inside ${stores.find((x) => x.id === item.bottle)?.name || 'this store'} yet. Pick Metal graphics in the ••• menu.`);
+    if (!gptkReady()) throw new Error("Turn on Apple's DirectX 12 engine first: ••• menu, Graphics: Apple D3DMetal.");
+  }
   await engine.ensureBottle(item.bottle, log, want);
+  await engine.switchEngine(item.bottle, fix);
+  if (fix.graphics === 'd3dmetal') { await engine.readyForGptk(item.bottle, log, (f) => job(item.id, "Setting up Apple's engine (first time only)", f)); jobDone(item.id); }
   await fixer.applyFix(item.bottle, fix, log);
   let args = [item.exe, ...(item.args || [])];
   if (fix.desktop) args = ['explorer', `/desktop=DropExe,${fix.desktop}`, ...args];
@@ -360,7 +382,7 @@ function startWatcher() {
     // While a store is open, games installed or removed inside it show up here within 30 seconds.
     if (++ticks % 15 === 0 && [...running.keys()].some((id) => id.startsWith('store-'))) rescanStores();
     if (!running.size) return;
-    const every = (await allProcs()).map((c) => c.toLowerCase());
+    const every = (await allProcs()).map((c) => winCmd(c).toLowerCase());
     const procs = every.filter((l) => /^[a-z]:\\/.test(l));
     // The program's own path is the first thing on its command line.
     const exeOf = (c) => { const i = c.indexOf('.exe'); return i < 0 ? c : c.slice(0, i + 4); };
@@ -392,6 +414,8 @@ ipcMain.handle('fix', async (e, id) => {
     for (let i = 0; i < steps.length; i++) {
       if (fixing.cancelled) break;
       const step = steps[i];
+      // Apple's engine only when the user turned it on, and only for games outside a store's drive.
+      if (step.needs === 'gptk' && (!gptkReady() || (stores.find((x) => x.id === item.bottle)?.engine || 'wine11') !== 'wine11')) { send('fix', { id, i, n: steps.length, step: step.id, state: 'skipped' }); continue; }
       send('fix', { id, i, n: steps.length, step: step.id, state: 'trying' });
       await engine.killBottle(item.bottle);
       for (const [rid, r] of running) if (r.bottle === item.bottle) finish(rid);

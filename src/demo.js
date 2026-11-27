@@ -17,7 +17,7 @@ function view(root) {
   const now = Date.now();
   const items = games.map(([name, id, playMs, g], i) => ({
     id: `steam-${id}`, kind: 'game', source: 'steam', name, bottle: 'steam', steamAppId: String(id),
-    art: art(id), playMs, lastPlayed: now - i * 86400e3, fix: { graphics: g }, fixedWith: i === 3 ? 'dxvk' : null, macApp: i < 2, running: false,
+    art: art(id), playMs, lastPlayed: now - i * 86400e3, fix: { graphics: g }, fixedWith: i === 3 ? 'dxvk' : null, macApp: i < 2, running: false, canGptk: true,
   }));
   const fx = path.join(__dirname, '..', 'test', 'fixtures');
   items.push({ id: 'app-cave', kind: 'game', source: 'drop', name: 'Cave Story', bottle: 'apps', art: { icon: path.join(fx, 'cave.png') }, playMs: 2 * H, lastPlayed: now - 20 * 86400e3, fix: { graphics: 'wined3d' } });

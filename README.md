@@ -25,7 +25,9 @@
 - **Real Mac apps.** Add any game to Launchpad and Spotlight.
 - **The rest:** Retina sharpness switch, controller check, play time, and Remove that can move a game's files to the Trash.
 
-> Ubisoft Connect and the EA app don't work yet. Games with anti-cheat or DirectX 12 usually won't run. Windows-only Steam games need DropExe's own Steam (Stores tab).
+> Ubisoft Connect and the EA app don't work yet. Games with anti-cheat won't run. Windows-only Steam games need DropExe's own Steam (Stores tab).
+>
+> **DirectX 12:** on Apple silicon, turn on Apple's D3DMetal engine (••• menu, Graphics: Apple D3DMetal). DropExe downloads Apple's Game Porting Toolkit only after you accept Apple's licence (free, non-commercial use). "Make it run" tries it too once it's on. Not yet for games inside DropExe's Steam.
 
 ## Install
 

@@ -83,6 +83,7 @@
   <button role="menuitem" data-act="graphics-dxmt">Graphics: Metal</button>
   <button role="menuitem" data-act="graphics-dxvk">Graphics: Vulkan</button>
   <button role="menuitem" data-act="graphics-wined3d">Graphics: Classic</button>
+  <button role="menuitem" data-act="graphics-d3dmetal">Graphics: Apple D3DMetal (DirectX 12)</button>
   <hr>
   <button role="menuitem" data-act="drive">Show its Windows drive</button>
   <button role="menuitem" data-act="log">Show what happened last time</button>
@@ -101,6 +102,17 @@
       <div class="ask-btns"><button class="btn primary" id="fix-yes">Yes, it works</button><button class="btn glass" id="fix-no">No, try the next fix</button></div>
     </div>
     <div class="sheet-foot"><button class="btn ghost" id="fix-close">Stop trying</button></div>
+  </div>
+</div>
+
+<!-- Apple's DirectX 12 engine: Apple's licence must be accepted before it's downloaded -->
+<div class="sheet" id="gptk-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="gptk-title">
+  <div class="sheet-card">
+    <h2 id="gptk-title" class="sheet-title">Apple's DirectX 12 engine</h2>
+    <p class="sheet-text">D3DMetal is Apple's own translator from DirectX 11 and 12 to Metal, from Apple's Game Porting Toolkit. It lets DirectX 12 games run, and makes many DirectX 11 games faster.</p>
+    <p class="sheet-text">It's Apple's software, under Apple's licence: free, for non-commercial use, and for trying out games on your Mac. DropExe downloads it for you (<span id="gptk-size">228</span> MB) only if you accept.</p>
+    <p class="sheet-text" id="gptk-err" hidden></p>
+    <div class="sheet-foot"><button class="btn ghost" id="gptk-read">Read Apple's licence</button><span class="grow"></span><button class="btn ghost" id="gptk-cancel">Cancel</button><button class="btn primary" id="gptk-ok">Accept and download</button></div>
   </div>
 </div>
 
